@@ -233,7 +233,7 @@ function EmptyState({ category }: { category: CategoryType | null }) {
         <div className="text-center max-w-md">
           <span className="text-6xl mb-4 block">👋</span>
           <h2 className="text-xl font-semibold text-white mb-2">
-            Welcome to Smart Task Hub
+            Welcome to Smart Kanban
           </h2>
           <p className="text-dark-400">
             Select a category from the sidebar to get started. I'll help you plan, organize, and remember everything!

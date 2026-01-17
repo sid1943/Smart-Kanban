@@ -1,5 +1,5 @@
 // App metadata
-export const APP_NAME = 'Smart Task Hub';
+export const APP_NAME = 'Smart Kanban';
 export const APP_VERSION = '0.2.0';
 
 // Storage keys

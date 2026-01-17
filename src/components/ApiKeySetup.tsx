@@ -31,7 +31,7 @@ export function ApiKeySetup({ onSubmit }: ApiKeySetupProps) {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20 mb-4">
             <span className="text-3xl">🎯</span>
           </div>
-          <h1 className="text-2xl font-semibold text-white mb-2">Smart Task Hub</h1>
+          <h1 className="text-2xl font-semibold text-white mb-2">Smart Kanban</h1>
           <p className="text-dark-400">Your intelligent task companion</p>
         </div>
 

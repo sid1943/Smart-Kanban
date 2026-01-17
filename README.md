@@ -1,4 +1,4 @@
-# Smart Task Hub 🎯
+# Smart Kanban 🎯
 
 An intelligent task management app that adapts its behavior based on task categories.
 

@@ -2865,7 +2865,7 @@ export default function App() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white tracking-tight">Smart Task Hub</h1>
+                <h1 className="text-lg font-bold text-white tracking-tight">Smart Kanban</h1>
                 <p className="text-xs text-[#9fadbc]">Plan smarter, achieve more</p>
               </div>
             </div>

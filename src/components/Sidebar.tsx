@@ -37,7 +37,7 @@ export function Sidebar({
             <span className="text-xl">🎯</span>
           </div>
           <div>
-            <h1 className="font-semibold text-white">Smart Task Hub</h1>
+            <h1 className="font-semibold text-white">Smart Kanban</h1>
             <p className="text-xs text-dark-400">Intelligent planning</p>
           </div>
         </div>
@@ -143,7 +143,7 @@ export function Sidebar({
       {/* Footer */}
       <div className="p-4 border-t border-dark-800">
         <p className="text-xs text-dark-500 text-center">
-          Smart Task Hub
+          Smart Kanban
         </p>
       </div>
     </aside>
