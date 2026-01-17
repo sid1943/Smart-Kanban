@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(tsc:*)",
+      "Bash(cmd /c \"npm run typecheck 2>&1\")",
+      "Bash(cmd /c \"npx tsc --noEmit 2>&1\")",
+      "Bash(powershell -Command \"npx tsc --noEmit 2>&1\")",
+      "Bash(cmd /c \"npm run build 2>&1\")",
+      "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop''; npm run build\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop && npm run build\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop && npm run build > build_output.txt 2>&1 && type build_output.txt\")",
+      "Bash(cmd /c \"cd\")",
+      "Bash(cmd /c \"cd .. && npm run build 2>&1\")",
+      "Bash(npm run build:*)",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop && npm run build\")",
+      "Bash(cmd.exe /c \"winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements\")",
+      "Bash(cmd.exe /c \"winget --version\")",
+      "Bash(powershell.exe -Command \"winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements\")",
+      "Bash(powershell.exe -Command \"cd ''C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop''; npm install; npm run build\")",
+      "Bash(powershell.exe -Command \"$env:Path = [System.Environment]::GetEnvironmentVariable\\(''Path'',''Machine''\\) + '';'' + [System.Environment]::GetEnvironmentVariable\\(''Path'',''User''\\); cd ''C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop''; npm install; npm run build\")",
+      "Bash(powershell.exe -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' --version\")",
+      "Bash(powershell.exe -Command \"cd ''C:\\\\Users\\\\Gamer\\\\OneDrive\\\\Desktop''; & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' install\")"
+    ]
+  }
+}

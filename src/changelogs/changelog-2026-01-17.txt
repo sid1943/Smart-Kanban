@@ -1,0 +1,216 @@
+================================================================================
+PLANNER - CHANGELOG
+Date: 2026-01-17
+================================================================================
+
+VERSION 2.3.0 - My Profile with Document Storage
+--------------------------------------------------------------------------------
+
+[NEW] My Profile Tab
+- Dedicated profile view accessible from "My Profile" button on home page
+- Profile completion percentage displayed prominently
+- Five organized categories:
+  * Travel Documents (Passport, Visas, Travel Insurance, Frequent Flyer)
+  * Identity Documents (Driver's License, National ID, Birth Certificate)
+  * Health Information (Health Insurance, Blood Type, Allergies, Vaccinations)
+  * Skills & Tools (Python, Node.js, VS Code, Git versions)
+  * Education & Certifications (Degree, Certifications, Language Proficiency)
+
+[NEW] Predefined Information Templates
+- 22 pre-configured fields with appropriate placeholders
+- Each field shows relevant icon for easy identification
+- Expiry date support for time-sensitive documents
+- Visual status indicators: Complete (green), Expiring Soon (yellow), Expired (red)
+
+[NEW] Document Upload & Storage
+- Upload supporting documents for each profile field
+- Supported formats: PDF, Images (JPG, PNG, GIF), Word documents
+- Documents stored locally in browser (base64 encoded)
+- Download button to retrieve stored documents
+- Delete button to remove uploaded documents
+
+[IMPROVED] Smart Task Detection
+- Now checks profile data in addition to custom user info
+- Matches tasks against profile fields automatically
+- Shows profile-based completion status on relevant tasks
+
+--------------------------------------------------------------------------------
+
+VERSION 2.2.0 - Smart Task Detection with My Info
+--------------------------------------------------------------------------------
+
+[NEW] My Info - Personal Information Storage
+- "My Info" button in home page header
+- Store personal information with categories:
+  * Travel (passport, visa, etc.)
+  * Skills (programming languages, tools)
+  * Certifications
+  * Personal
+  * Other
+- Optional expiry date for time-sensitive info
+- Visual indicators for expired/expiring soon items
+- Data persists in localStorage
+
+[NEW] Smart Task Detection
+- Tasks automatically match against stored user info
+- Visual indicators show task status based on your info:
+  * Green highlight = Already done or valid (e.g., passport valid until 2030)
+  * Red highlight = Expired, needs action (e.g., passport expired)
+- Shows matched info details below task text
+- Supported matches:
+  * Passport/visa status and expiry
+  * Python/Node.js installation
+  * VS Code setup
+  * Flight/hotel bookings
+  * Travel insurance
+
+[IMPROVED] Add Task Button Per Category
+- "Add a task" button now appears at end of each category
+- New tasks are added to the specific category you click
+- Previously was only one button at the bottom
+
+--------------------------------------------------------------------------------
+
+VERSION 2.1.0 - Task Management & Customization
+--------------------------------------------------------------------------------
+
+[NEW] Manual Task Creation
+- "Add a task" button at the bottom of task list view
+- Input field with Enter key support for quick adding
+- Tasks added to "custom" category by default
+- Cancel button to dismiss input without saving
+
+[NEW] Task Editing
+- Click any task to open detail modal
+- Click task title in modal to edit inline
+- Editable description field (auto-saves on blur)
+- Add/edit resource links directly in modal
+- Delete task button in modal header
+
+[NEW] Background Photo Selection
+- Image button in dashboard header to change background
+- 10 preset Unsplash background photos available:
+  * Mountains, Beach, Snow mountain
+  * Japan temple, Travel map
+  * Study desk, Coding laptop
+  * Fitness, Cooking, Work desk
+- Visual indicator shows currently selected background
+- Background persists during session
+
+[IMPROVED] Board Photo Thumbnails
+- Boards on home page now display photos instead of colors
+- Recently viewed boards show background images
+- Default images assigned based on board category:
+  * Travel: Travel map photo
+  * Learning: Study desk photo
+  * Fitness: Fitness photo
+  * Cooking: Cooking photo
+  * Projects: Coding laptop photo
+
+[FIXED] Recent Boards Navigation
+- Clicking recent boards now opens board view (dashboard)
+- Previously was incorrectly opening task detail view
+
+--------------------------------------------------------------------------------
+
+VERSION 2.0.0 - Major Redesign
+--------------------------------------------------------------------------------
+
+[RENAMED]
+- App renamed from "Smart Task Hub" to "Planner"
+- Header title centered
+
+[NEW] Home Page with Workspaces
+- Added new home view as the default landing page
+- "Recently viewed" section showing last 4 accessed goals
+- Workspaces organized by category:
+  * Personal (blue)
+  * Travel Planning (green)
+  * Learning & Growth (red)
+  * Projects (purple)
+- Each workspace displays boards with colored headers
+- "Create new board" button in each category
+- Click any board to open its Kanban view
+
+[NEW] Task Detail Modal
+- Click any task to open a detailed modal view
+- Modal shows:
+  * Task title with checkbox to mark complete
+  * Category/list the task belongs to
+  * Description section with specific guidance
+  * Resource links displayed prominently with icons
+  * Activity status (pending/completed indicator)
+- Click outside modal or X button to close
+
+[IMPROVED] Task Descriptions
+- Python learning tasks now include:
+  * Detailed installation instructions (Python 3.12+, VS Code setup)
+  * Specific syntax explanations with examples
+  * Practice project suggestions
+- Travel tasks now include:
+  * Passport validity requirements (6+ months rule)
+  * Document backup instructions (cloud storage tips)
+  * Flight booking strategies (price tracking, flexible dates)
+  * Booking checklist (name verification, insurance, baggage)
+
+[IMPROVED] Dashboard Navigation
+- Added home button (house icon) in dashboard header
+- Click to return to home page from any board view
+- "All Goals" subheader shows total item count
+
+--------------------------------------------------------------------------------
+
+VERSION 1.5.0 - Drag & Drop + Styling
+--------------------------------------------------------------------------------
+
+[NEW] Drag and Drop
+- Installed @dnd-kit library for drag-and-drop functionality
+- Cards can be dragged within columns to reorder
+- Cards can be dragged between columns to recategorize
+- Columns can be dragged to reorder horizontally
+- Visual feedback: cards become semi-transparent when dragging
+- Drag overlay shows card being moved with slight rotation
+
+[IMPROVED] Trello-Style UI
+- Columns: Dark background (#101204), rounded corners
+- Cards: Lighter background (#22272b), minimal styling
+- Card content: Title with task count badge
+- "Add a card" button: Simple text with + icon
+- "Add another list" button: Semi-transparent with hover effect
+- Background image visible through UI elements
+
+[IMPROVED] Card Visibility
+- Made columns more opaque with solid backgrounds
+- Increased card contrast for better visibility
+- Added visible borders to interactive elements
+- Brighter hover states for better feedback
+
+--------------------------------------------------------------------------------
+
+VERSION 1.0.0 - Initial Features
+--------------------------------------------------------------------------------
+
+[CORE] Goal Planning System
+- Natural language input for goals
+- Intent detection (travel, learning, fitness, cooking, etc.)
+- Follow-up questions for personalized task lists
+- Task generation with real resource links
+
+[CORE] Multi-Goal Support
+- Track multiple goals simultaneously
+- Goals organized by category columns
+- Progress tracking per goal
+- Delete goals functionality
+
+[CORE] Task Management
+- Checkbox to mark tasks complete
+- Progress bar showing completion percentage
+- Tasks grouped by category
+- External links to resources
+
+[DATA] Resource Libraries
+- Destination resources for Japan, France, Italy, Thailand, UK
+- Learning resources for Python and JavaScript
+- Real URLs for visa applications, courses, attractions, etc.
+
+================================================================================
