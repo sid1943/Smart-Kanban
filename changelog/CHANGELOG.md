@@ -5,6 +5,48 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-01-17
+
+### Added
+
+#### Smart Content Engine
+Universal adaptive engine that detects content type and enriches with relevant data.
+
+**Architecture:**
+- `src/engine/` - Modular engine with detection, enrichment, and type definitions
+- `src/engine/detection/ContentDetector.ts` - Pattern matching with confidence scoring
+- `src/engine/enrichment/` - API clients for multiple data sources
+- `src/components/SmartInsights.tsx` - React component for displaying enriched data
+
+**Content Detection:**
+- Detects: TV Series, Movies, Anime, Books, Games, Music
+- Pattern matching: keywords, year ranges, URLs, list context
+- Confidence scoring (0-100%) for accurate classification
+- Automatic type icon and name assignment
+
+**Entertainment Lens (TV, Movies, Anime):**
+- TMDb API integration - ratings, streaming availability, franchise info
+- OMDb API integration - IMDb ratings, Rotten Tomatoes, Metacritic scores
+- Jikan API integration - MyAnimeList data for anime
+- Where to Watch - streaming service availability
+- Related content - sequels, prequels, franchise movies
+
+**Leisure Lens (Books, Games):**
+- Open Library API - book metadata, author info, covers
+- RAWG API - game data, platforms, Metacritic scores
+- Quick links to Goodreads, Amazon, Steam
+
+**UI Features:**
+- Expandable Smart Insights section in card modal
+- On-demand data fetching (click to load)
+- In-memory caching (1 hour TTL)
+- Loading states and error handling
+- Ratings display with source icons
+- Streaming availability badges
+- Franchise/series position tracking
+
+---
+
 ## [0.2.9] - 2026-01-17
 
 ### Enhanced
@@ -17,8 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Checklist progress mini-bar with count
 - **List icon** - Visual indicator next to list name
 
-#### Smart Insights Section
-New intelligent analysis section in card modal:
+#### Smart Insights Section (Basic - replaced in v0.3.0)
+Basic intelligent analysis section in card modal:
 - **Media type detection** - Auto-detects TV Series, Movie, or Anime based on content
 - **Year extraction** - Parses year ranges from titles (e.g., "2021 - 2024")
 - **Progress calculation** - Shows completion percentage across all checklists

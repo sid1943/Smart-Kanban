@@ -12,6 +12,7 @@ import {
   DragOverEvent,
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
+import SmartInsights from './components/SmartInsights';
 import {
   arrayMove,
   SortableContext,
@@ -5807,95 +5808,13 @@ export default function App() {
                 </div>
               )}
 
-              {/* Smart Insights */}
-              {(() => {
-                // Analyze task for smart insights
-                const insights: Array<{ icon: string; label: string; value: string; color?: string }> = [];
-                const taskText = selectedTask.text.toLowerCase();
-                const description = (selectedTask.description || '').toLowerCase();
-                const allText = taskText + ' ' + description;
-
-                // Detect media type
-                const yearMatch = selectedTask.text.match(/\((\d{4})(?:\s*-\s*(\d{4}|present))?\)/i);
-                const hasSeasonChecklist = selectedTask.checklists?.some(cl =>
-                  cl.name.toLowerCase().includes('season') || cl.name.toLowerCase().includes('episode')
-                );
-                const hasIMDbLink = selectedTask.links?.some(l => l.url.includes('imdb.com'));
-                const hasTMDbLink = selectedTask.links?.some(l => l.url.includes('themoviedb.org'));
-                const hasYouTubeLink = selectedTask.links?.some(l => l.url.includes('youtube.com') || l.url.includes('youtu.be'));
-
-                // Media type detection
-                if (hasSeasonChecklist || allText.match(/\b(season|episode|series|tv show)\b/)) {
-                  insights.push({ icon: '📺', label: 'Type', value: 'TV Series', color: '#579dff' });
-                } else if (allText.match(/\b(movie|film)\b/) || (yearMatch && !hasSeasonChecklist)) {
-                  insights.push({ icon: '🎬', label: 'Type', value: 'Movie', color: '#f87171' });
-                } else if (allText.match(/\b(anime|manga)\b/)) {
-                  insights.push({ icon: '🎌', label: 'Type', value: 'Anime', color: '#c084fc' });
-                }
-
-                // Year info
-                if (yearMatch) {
-                  const startYear = yearMatch[1];
-                  const endYear = yearMatch[2];
-                  insights.push({
-                    icon: '📅',
-                    label: 'Year',
-                    value: endYear ? `${startYear} - ${endYear}` : startYear
-                  });
-                }
-
-                // Checklist summary
-                if (selectedTask.checklists && selectedTask.checklists.length > 0) {
-                  const totalItems = selectedTask.checklists.reduce((sum, cl) => sum + cl.items.length, 0);
-                  const checkedItems = selectedTask.checklists.reduce(
-                    (sum, cl) => sum + cl.items.filter(i => i.checked).length, 0
-                  );
-                  const percentage = totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
-                  insights.push({
-                    icon: '✅',
-                    label: 'Progress',
-                    value: `${percentage}% (${checkedItems}/${totalItems})`,
-                    color: percentage === 100 ? '#22c55e' : percentage > 50 ? '#eab308' : '#9fadbc'
-                  });
-                }
-
-                // Link sources
-                const sources: string[] = [];
-                if (hasIMDbLink) sources.push('IMDb');
-                if (hasTMDbLink) sources.push('TMDb');
-                if (hasYouTubeLink) sources.push('YouTube');
-                if (sources.length > 0) {
-                  insights.push({ icon: '🔗', label: 'Sources', value: sources.join(', ') });
-                }
-
-                if (insights.length === 0) return null;
-
-                return (
-                  <div className="mb-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                      </svg>
-                      <h3 className="text-[#b6c2cf] font-semibold">Smart Insights</h3>
-                    </div>
-                    <div className="bg-[#22272b] rounded-lg p-4">
-                      <div className="grid grid-cols-2 gap-3">
-                        {insights.map((insight, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <span className="text-lg">{insight.icon}</span>
-                            <div>
-                              <p className="text-[#6b7280] text-xs">{insight.label}</p>
-                              <p className="text-sm font-medium" style={{ color: insight.color || '#b6c2cf' }}>
-                                {insight.value}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* Smart Insights - Powered by Content Engine */}
+              <SmartInsights
+                title={selectedTask.text}
+                description={selectedTask.description}
+                listContext={selectedTask.category}
+                urls={selectedTask.links?.map(l => l.url)}
+              />
 
               {/* Activity */}
               <div>

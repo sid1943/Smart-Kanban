@@ -96,10 +96,12 @@ Future improvements and features to be added.
 
 ---
 
-## Smart Organization (New!)
+## Smart Organization
 
-### Content Detection
-- [ ] Auto-detect content type (TV, Movie, Anime, Book, Game)
+### Content Detection (v0.3.0 - Completed)
+- [x] Auto-detect content type (TV, Movie, Anime, Book, Game)
+- [x] Pattern matching with confidence scoring
+- [x] URL pattern detection (IMDb, TMDb, MAL, Steam, Spotify)
 - [ ] Suggest categories based on content analysis
 - [ ] Auto-tag based on patterns (year, genre, platform)
 - [ ] Detect duplicate entries across boards
@@ -110,11 +112,28 @@ Future improvements and features to be added.
 - [ ] Content recommendations based on existing items
 - [ ] Natural language task creation ("Add Breaking Bad to watchlist")
 
-### Media-Specific Features
-- [ ] Fetch metadata from IMDb/TMDb APIs
-- [ ] Show ratings, runtime, genre from external sources
+### Media-Specific Features (v0.3.0 - Completed)
+- [x] Fetch metadata from TMDb/OMDb/Jikan APIs
+- [x] Show ratings from multiple sources (IMDb, RT, Metacritic, MAL)
+- [x] Display runtime, seasons, episodes, genres
+- [x] Where to Watch - streaming availability
+- [x] Franchise detection and watch order
 - [ ] Track watch progress across seasons
 - [ ] Mark as "Currently Watching" / "Completed" / "Dropped"
+
+### Books & Games (v0.3.0 - Completed)
+- [x] Open Library API for book metadata
+- [x] RAWG API for game metadata
+- [x] Quick links to external sources
+- [x] Related content by same author/in series
+
+### Engine Enhancements (Future)
+- [ ] Add Music lens (Spotify/Last.fm integration)
+- [ ] Add Travel lens (weather, visa, currency)
+- [ ] Add Recipe lens (nutrition, ingredients)
+- [ ] Configurable API keys in settings
+- [ ] Offline mode with cached data
+- [ ] Background refresh for ongoing shows
 
 ---
 
@@ -129,8 +148,12 @@ Future improvements and features to be added.
 - [x] Link display with card titles (v0.2.8)
 - [x] Improved card modal with info bar (v0.2.9)
 - [x] List name formatting (snake_case to Title Case) (v0.2.9)
-- [x] Smart Insights section - auto-detect media type, year, progress (v0.2.9)
+- [x] Basic Smart Insights - media type, year, progress (v0.2.9)
 - [x] Trello label colors CSS variables (v0.2.9)
+- [x] Smart Content Engine - universal detection and enrichment (v0.3.0)
+- [x] Entertainment Lens - TV, Movies, Anime with TMDb/OMDb/Jikan (v0.3.0)
+- [x] Leisure Lens - Books, Games with OpenLibrary/RAWG (v0.3.0)
+- [x] On-demand data fetching with caching (v0.3.0)
 
 ---
 
