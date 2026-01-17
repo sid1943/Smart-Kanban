@@ -27,6 +27,32 @@ interface TaskLabel {
   color: string;
 }
 
+interface ChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
+interface Checklist {
+  id: string;
+  name: string;
+  items: ChecklistItem[];
+}
+
+interface Attachment {
+  id: string;
+  name: string;
+  url: string;
+  type?: string;
+}
+
+interface Comment {
+  id: string;
+  text: string;
+  author: string;
+  date: string;
+}
+
 interface TaskItem {
   id: string;
   text: string;
@@ -36,10 +62,18 @@ interface TaskItem {
   linkText?: string;
   description?: string;
   dueDate?: string;
+  startDate?: string;
   priority?: 'low' | 'medium' | 'high';
   labels?: TaskLabel[];
   checklistTotal?: number;
   checklistChecked?: number;
+  checklists?: Checklist[];
+  attachments?: Attachment[];
+  comments?: Comment[];
+  coverColor?: string;
+  coverImage?: string;
+  assignees?: string[];
+  position?: number;
 }
 
 // User's personal info for smart task suggestions
@@ -170,11 +204,14 @@ interface TrelloCheckItem {
   id: string;
   name: string;
   state: 'complete' | 'incomplete';
+  pos: number;
 }
 
 interface TrelloChecklist {
   id: string;
+  idCard: string;
   name: string;
+  pos: number;
   checkItems: TrelloCheckItem[];
 }
 
@@ -184,28 +221,68 @@ interface TrelloLabel {
   color: string;
 }
 
+interface TrelloAttachment {
+  id: string;
+  name: string;
+  url: string;
+  date: string;
+  mimeType?: string;
+  isUpload: boolean;
+}
+
+interface TrelloComment {
+  id: string;
+  idMemberCreator: string;
+  data: {
+    text: string;
+    card?: { id: string; name: string };
+  };
+  date: string;
+  type: string;
+}
+
+interface TrelloMember {
+  id: string;
+  fullName: string;
+  username: string;
+  avatarUrl?: string;
+}
+
 interface TrelloCard {
   id: string;
   name: string;
   desc: string;
   idList: string;
   due: string | null;
+  start: string | null;
   dueComplete: boolean;
   closed: boolean;
+  pos: number;
   idChecklists: string[];
+  idMembers: string[];
   labels: TrelloLabel[];
+  cover?: {
+    color?: string;
+    idAttachment?: string;
+    idUploadedBackground?: string;
+    size?: string;
+    brightness?: string;
+  };
   badges?: {
     checkItems: number;
     checkItemsChecked: number;
     comments: number;
     attachments: number;
+    description: boolean;
   };
+  attachments?: TrelloAttachment[];
 }
 
 interface TrelloList {
   id: string;
   name: string;
   closed: boolean;
+  pos: number;
 }
 
 interface TrelloBoard {
@@ -213,9 +290,16 @@ interface TrelloBoard {
   desc: string;
   url?: string;
   shortUrl?: string;
+  prefs?: {
+    background?: string;
+    backgroundImage?: string;
+    backgroundImageScaled?: Array<{ url: string; width: number; height: number }>;
+  };
   lists: TrelloList[];
   cards: TrelloCard[];
   checklists: TrelloChecklist[];
+  actions?: TrelloComment[];
+  members?: TrelloMember[];
 }
 
 // Parse Trello JSON export
@@ -223,6 +307,10 @@ interface TrelloImportResult {
   boardName: string;
   goalsCreated: number;
   tasksCreated: number;
+  checklistsImported: number;
+  attachmentsImported: number;
+  commentsImported: number;
+  listsImported: number;
 }
 
 // Workspace definition
@@ -2419,8 +2507,8 @@ export default function App() {
           return;
         }
 
-        // Get open lists only
-        const openLists = data.lists.filter(l => !l.closed);
+        // Get open lists only, sorted by position
+        const openLists = data.lists.filter(l => !l.closed).sort((a, b) => a.pos - b.pos);
 
         // Create tasks from cards - each card becomes a task, list name becomes category
         const tasks: TaskItem[] = [];
@@ -2429,8 +2517,38 @@ export default function App() {
         const listMap = new Map<string, string>();
         openLists.forEach(list => listMap.set(list.id, list.name));
 
-        // Process cards as tasks
-        data.cards.filter(c => !c.closed).forEach(card => {
+        // Create checklist ID to checklist mapping
+        const checklistMap = new Map<string, TrelloChecklist>();
+        (data.checklists || []).forEach(cl => checklistMap.set(cl.id, cl));
+
+        // Create member ID to name mapping
+        const memberMap = new Map<string, string>();
+        (data.members || []).forEach(m => memberMap.set(m.id, m.fullName || m.username));
+
+        // Get comments grouped by card ID
+        const commentsByCard = new Map<string, Comment[]>();
+        (data.actions || [])
+          .filter(a => a.type === 'commentCard' && a.data.card)
+          .forEach(action => {
+            const cardId = action.data.card?.id;
+            if (cardId) {
+              const existing = commentsByCard.get(cardId) || [];
+              existing.push({
+                id: action.id,
+                text: action.data.text,
+                author: memberMap.get(action.idMemberCreator) || 'Unknown',
+                date: action.date,
+              });
+              commentsByCard.set(cardId, existing);
+            }
+          });
+
+        // Process cards as tasks, sorted by position within each list
+        const sortedCards = data.cards
+          .filter(c => !c.closed)
+          .sort((a, b) => a.pos - b.pos);
+
+        sortedCards.forEach(card => {
           const listName = listMap.get(card.idList) || 'imported';
           const categoryKey = listName.toLowerCase().replace(/\s+/g, '_');
 
@@ -2440,9 +2558,56 @@ export default function App() {
             color: label.color,
           }));
 
-          // Get checklist progress from badges
-          const checklistTotal = card.badges?.checkItems || 0;
-          const checklistChecked = card.badges?.checkItemsChecked || 0;
+          // Get full checklists for this card
+          const cardChecklists: Checklist[] = (card.idChecklists || [])
+            .map(clId => checklistMap.get(clId))
+            .filter((cl): cl is TrelloChecklist => cl !== undefined)
+            .sort((a, b) => a.pos - b.pos)
+            .map(cl => ({
+              id: cl.id,
+              name: cl.name,
+              items: cl.checkItems
+                .sort((a, b) => a.pos - b.pos)
+                .map(item => ({
+                  id: item.id,
+                  text: item.name,
+                  checked: item.state === 'complete',
+                })),
+            }));
+
+          // Calculate checklist totals
+          const checklistTotal = cardChecklists.reduce((sum, cl) => sum + cl.items.length, 0);
+          const checklistChecked = cardChecklists.reduce(
+            (sum, cl) => sum + cl.items.filter(i => i.checked).length,
+            0
+          );
+
+          // Get attachments
+          const attachments: Attachment[] = (card.attachments || []).map(att => ({
+            id: att.id,
+            name: att.name,
+            url: att.url,
+            type: att.mimeType,
+          }));
+
+          // Get comments for this card
+          const comments = commentsByCard.get(card.id) || [];
+
+          // Get assigned members
+          const assignees = (card.idMembers || [])
+            .map(mId => memberMap.get(mId))
+            .filter((name): name is string => name !== undefined);
+
+          // Get cover info
+          let coverColor: string | undefined;
+          let coverImage: string | undefined;
+          if (card.cover) {
+            coverColor = card.cover.color;
+            if (card.cover.idAttachment) {
+              const coverAtt = (card.attachments || []).find(a => a.id === card.cover?.idAttachment);
+              coverImage = coverAtt?.url;
+            }
+          }
 
           tasks.push({
             id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -2453,7 +2618,15 @@ export default function App() {
             labels: taskLabels.length > 0 ? taskLabels : undefined,
             checklistTotal: checklistTotal > 0 ? checklistTotal : undefined,
             checklistChecked: checklistTotal > 0 ? checklistChecked : undefined,
+            checklists: cardChecklists.length > 0 ? cardChecklists : undefined,
             dueDate: card.due || undefined,
+            startDate: card.start || undefined,
+            attachments: attachments.length > 0 ? attachments : undefined,
+            comments: comments.length > 0 ? comments : undefined,
+            assignees: assignees.length > 0 ? assignees : undefined,
+            coverColor,
+            coverImage,
+            position: card.pos,
           });
         });
 
@@ -2534,6 +2707,21 @@ export default function App() {
           });
         }
 
+        // Get board background image if available
+        let boardBackgroundImage: string | undefined;
+        if (data.prefs?.backgroundImageScaled && data.prefs.backgroundImageScaled.length > 0) {
+          // Get the largest available image
+          const sorted = [...data.prefs.backgroundImageScaled].sort((a, b) => b.width - a.width);
+          boardBackgroundImage = sorted[0].url;
+        } else if (data.prefs?.backgroundImage) {
+          boardBackgroundImage = data.prefs.backgroundImage;
+        }
+
+        // Calculate import stats
+        const totalChecklists = tasks.reduce((sum, t) => sum + (t.checklists?.length || 0), 0);
+        const totalAttachments = tasks.reduce((sum, t) => sum + (t.attachments?.length || 0), 0);
+        const totalComments = tasks.reduce((sum, t) => sum + (t.comments?.length || 0), 0);
+
         // Create one goal for the entire board
         const newGoal: StoredGoal = {
           id: `goal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -2546,6 +2734,7 @@ export default function App() {
             listCount: openLists.length.toString(),
             boardType: detectedBoardType,
           },
+          backgroundImage: boardBackgroundImage,
           createdAt: Date.now(),
           status: 'in_progress',
         };
@@ -2560,6 +2749,10 @@ export default function App() {
           boardName: data.name || 'Trello Board',
           goalsCreated: 1,
           tasksCreated: tasks.length,
+          checklistsImported: totalChecklists,
+          attachmentsImported: totalAttachments,
+          commentsImported: totalComments,
+          listsImported: openLists.length,
         });
         setTrelloImportError(null);
         setShowTrelloImportModal(true);
@@ -3327,20 +3520,42 @@ export default function App() {
                     <div className="space-y-4">
                       <div className="bg-[#22272b] rounded-lg p-4">
                         <p className="text-[#9fadbc] text-sm mb-2">Board imported:</p>
-                        <p className="text-white font-medium">{trelloImportResult.boardName}</p>
+                        <p className="text-white font-medium text-lg">{trelloImportResult.boardName}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-[#22272b] rounded-lg p-4 text-center">
-                          <p className="text-3xl font-bold text-[#579dff]">{trelloImportResult.goalsCreated}</p>
-                          <p className="text-[#9fadbc] text-sm">Goals Created</p>
+
+                      {/* Main stats */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-[#22272b] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-[#579dff]">{trelloImportResult.tasksCreated}</p>
+                          <p className="text-[#9fadbc] text-xs">Cards</p>
                         </div>
-                        <div className="bg-[#22272b] rounded-lg p-4 text-center">
-                          <p className="text-3xl font-bold text-[#579dff]">{trelloImportResult.tasksCreated}</p>
-                          <p className="text-[#9fadbc] text-sm">Tasks Imported</p>
+                        <div className="bg-[#22272b] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-[#579dff]">{trelloImportResult.listsImported}</p>
+                          <p className="text-[#9fadbc] text-xs">Lists</p>
                         </div>
                       </div>
+
+                      {/* Detailed stats */}
+                      <div className="bg-[#22272b] rounded-lg p-4">
+                        <p className="text-[#9fadbc] text-xs mb-3 uppercase tracking-wider">Also imported:</p>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-lg font-semibold text-white">{trelloImportResult.checklistsImported}</p>
+                            <p className="text-[#9fadbc] text-xs">Checklists</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-white">{trelloImportResult.attachmentsImported}</p>
+                            <p className="text-[#9fadbc] text-xs">Attachments</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-white">{trelloImportResult.commentsImported}</p>
+                            <p className="text-[#9fadbc] text-xs">Comments</p>
+                          </div>
+                        </div>
+                      </div>
+
                       <p className="text-[#9fadbc] text-xs">
-                        Your Trello board has been imported. Each card is now a task, organized by list names as categories.
+                        Your Trello board has been fully imported with all checklists, attachments, comments, labels, due dates, and members.
                       </p>
                     </div>
                   )}

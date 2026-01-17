@@ -5,6 +5,37 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-01-17
+
+### Enhanced
+
+#### Trello Import - Full Data Capture
+The Trello JSON import now captures all data, not just surface-level information:
+
+**New data captured:**
+- **Full Checklists** - Individual checklist items with their completion state (not just counts)
+- **Attachments** - File names, URLs, and types
+- **Comments** - Full comment text with author and date
+- **Card Position** - Cards maintain their original order within lists
+- **List Position** - Lists maintain their original order
+- **Cover Images** - Card cover images and colors
+- **Start Dates** - Card start dates (in addition to due dates)
+- **Assignees** - Member assignments on cards
+- **Board Background** - Original Trello board background image
+
+**New interfaces added:**
+- `ChecklistItem`, `Checklist` - For full checklist data
+- `Attachment` - For file attachments
+- `Comment` - For card comments
+- `TrelloAttachment`, `TrelloComment`, `TrelloMember` - Extended Trello types
+
+**Import modal improvements:**
+- Now shows detailed import statistics
+- Displays count of: Cards, Lists, Checklists, Attachments, Comments
+- Better visual layout with organized stat sections
+
+---
+
 ## [0.2.2] - 2026-01-17
 
 ### Fixed
