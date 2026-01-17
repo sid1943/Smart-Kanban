@@ -5,6 +5,30 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-01-17
+
+### Enhanced
+
+#### Card Modal Redesign
+- **List name formatting** - `snake_case` converted to `Title Case` for display
+- **Info bar** - Shows labels, due date, and checklist progress at a glance
+  - Labels with Trello colors
+  - Due date with overdue/completed states (red/green highlighting)
+  - Checklist progress mini-bar with count
+- **List icon** - Visual indicator next to list name
+
+#### Smart Insights Section
+New intelligent analysis section in card modal:
+- **Media type detection** - Auto-detects TV Series, Movie, or Anime based on content
+- **Year extraction** - Parses year ranges from titles (e.g., "2021 - 2024")
+- **Progress calculation** - Shows completion percentage across all checklists
+- **Source detection** - Identifies IMDb, TMDb, YouTube links
+
+#### CSS Improvements
+- Added Trello label color CSS variables (green, yellow, orange, red, purple, blue, sky, lime, pink, black)
+
+---
+
 ## [0.2.8] - 2026-01-17
 
 ### Enhanced

@@ -10,6 +10,18 @@
   --text-secondary: #a1a1aa;
   --accent: #10b981;
   --accent-glow: rgba(16, 185, 129, 0.15);
+
+  /* Trello label colors */
+  --trello-green: #61bd4f;
+  --trello-yellow: #f2d600;
+  --trello-orange: #ff9f1a;
+  --trello-red: #eb5a46;
+  --trello-purple: #c377e0;
+  --trello-blue: #0079bf;
+  --trello-sky: #00c2e0;
+  --trello-lime: #51e898;
+  --trello-pink: #ff78cb;
+  --trello-black: #344563;
 }
 
 * {

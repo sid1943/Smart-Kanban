@@ -96,6 +96,28 @@ Future improvements and features to be added.
 
 ---
 
+## Smart Organization (New!)
+
+### Content Detection
+- [ ] Auto-detect content type (TV, Movie, Anime, Book, Game)
+- [ ] Suggest categories based on content analysis
+- [ ] Auto-tag based on patterns (year, genre, platform)
+- [ ] Detect duplicate entries across boards
+
+### AI-Powered Features
+- [ ] Smart task suggestions based on board type
+- [ ] Auto-generate checklists (e.g., seasons for TV shows)
+- [ ] Content recommendations based on existing items
+- [ ] Natural language task creation ("Add Breaking Bad to watchlist")
+
+### Media-Specific Features
+- [ ] Fetch metadata from IMDb/TMDb APIs
+- [ ] Show ratings, runtime, genre from external sources
+- [ ] Track watch progress across seasons
+- [ ] Mark as "Currently Watching" / "Completed" / "Dropped"
+
+---
+
 ## Completed
 
 - [x] Trello JSON import with full data capture (v0.2.3)
@@ -105,6 +127,10 @@ Future improvements and features to be added.
 - [x] Import confirmation before saving (v0.2.7)
 - [x] Interactive checklists with add item (v0.2.7)
 - [x] Link display with card titles (v0.2.8)
+- [x] Improved card modal with info bar (v0.2.9)
+- [x] List name formatting (snake_case to Title Case) (v0.2.9)
+- [x] Smart Insights section - auto-detect media type, year, progress (v0.2.9)
+- [x] Trello label colors CSS variables (v0.2.9)
 
 ---
 

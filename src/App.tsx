@@ -2508,6 +2508,15 @@ export default function App() {
     return days;
   };
 
+  // Helper to format category/list names (snake_case to Title Case)
+  const formatCategoryName = (category: string): string => {
+    if (!category) return 'Tasks';
+    return category
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   // Helper to extract URLs from text (description, comments, etc.)
   const extractUrlsFromText = (text: string): Array<{ url: string; text?: string }> => {
     const links: Array<{ url: string; text?: string }> = [];
@@ -5393,56 +5402,64 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="sticky top-0 bg-[#1a1f26] px-6 py-4 border-b border-[#3d444d] flex items-start justify-between">
-              <div className="flex items-start gap-3 flex-1">
-                <button
-                  onClick={() => handleToggleTask(selectedTask.id)}
-                  className={`mt-1 w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0
-                            transition-all ${selectedTask.checked
-                              ? 'bg-accent border-accent'
-                              : 'border-[#5a6370] hover:border-accent'
-                            }`}
-                >
-                  {selectedTask.checked && (
-                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-                <div className="flex-1">
-                  {editingTaskId === selectedTask.id ? (
-                    <input
-                      type="text"
-                      defaultValue={selectedTask.text}
-                      autoFocus
-                      className="w-full bg-[#22272b] border border-[#5a6370] rounded px-3 py-2 text-white text-lg font-semibold
-                               focus:outline-none focus:border-accent"
-                      onBlur={(e) => {
-                        handleEditTask(selectedTask.id, { text: e.target.value });
-                        setEditingTaskId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleEditTask(selectedTask.id, { text: e.currentTarget.value });
+            <div className="sticky top-0 bg-[#1a1f26] px-6 py-4 border-b border-[#3d444d]">
+              {/* Top row: checkbox, title, actions */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 flex-1">
+                  <button
+                    onClick={() => handleToggleTask(selectedTask.id)}
+                    className={`mt-1 w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0
+                              transition-all ${selectedTask.checked
+                                ? 'bg-accent border-accent'
+                                : 'border-[#5a6370] hover:border-accent'
+                              }`}
+                  >
+                    {selectedTask.checked && (
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    {editingTaskId === selectedTask.id ? (
+                      <input
+                        type="text"
+                        defaultValue={selectedTask.text}
+                        autoFocus
+                        className="w-full bg-[#22272b] border border-[#5a6370] rounded px-3 py-2 text-white text-lg font-semibold
+                                 focus:outline-none focus:border-accent"
+                        onBlur={(e) => {
+                          handleEditTask(selectedTask.id, { text: e.target.value });
                           setEditingTaskId(null);
-                        }
-                        if (e.key === 'Escape') setEditingTaskId(null);
-                      }}
-                    />
-                  ) : (
-                    <h2
-                      onClick={() => setEditingTaskId(selectedTask.id)}
-                      className={`text-lg font-semibold text-white cursor-pointer hover:bg-[#22272b] rounded px-1 -mx-1
-                                ${selectedTask.checked ? 'line-through opacity-60' : ''}`}
-                    >
-                      {selectedTask.text}
-                    </h2>
-                  )}
-                  <p className="text-[#9fadbc] text-sm mt-1">in list: {selectedTask.category || 'Tasks'}</p>
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleEditTask(selectedTask.id, { text: e.currentTarget.value });
+                            setEditingTaskId(null);
+                          }
+                          if (e.key === 'Escape') setEditingTaskId(null);
+                        }}
+                      />
+                    ) : (
+                      <h2
+                        onClick={() => setEditingTaskId(selectedTask.id)}
+                        className={`text-lg font-semibold text-white cursor-pointer hover:bg-[#22272b] rounded px-1 -mx-1
+                                  ${selectedTask.checked ? 'line-through opacity-60' : ''}`}
+                      >
+                        {selectedTask.text}
+                      </h2>
+                    )}
+                    {/* List name with icon */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <svg className="w-4 h-4 text-[#6b7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                      </svg>
+                      <span className="text-[#9fadbc] text-sm">{formatCategoryName(selectedTask.category || '')}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
+                <div className="flex items-center gap-1">
+                  <button
                   onClick={() => setEditingTaskId(selectedTask.id)}
                   className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
                   title="Edit"
@@ -5470,6 +5487,64 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+              {/* Info Bar: Labels, Due Date, Progress */}
+              {(selectedTask.labels?.length || selectedTask.dueDate || selectedTask.checklistTotal) && (
+                <div className="px-6 py-3 bg-[#22272b]/50 border-b border-[#3d444d] flex flex-wrap items-center gap-3">
+                  {/* Labels */}
+                  {selectedTask.labels && selectedTask.labels.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {selectedTask.labels.map((label, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 rounded text-xs font-medium"
+                          style={{
+                            backgroundColor: label.color ? `var(--trello-${label.color}, #5a6370)` : '#5a6370',
+                            color: ['yellow', 'lime', 'sky'].includes(label.color || '') ? '#1a1f26' : 'white'
+                          }}
+                        >
+                          {label.name || label.color}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Due Date */}
+                  {selectedTask.dueDate && (
+                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium
+                      ${new Date(selectedTask.dueDate) < new Date() && !selectedTask.checked
+                        ? 'bg-red-500/20 text-red-400'
+                        : selectedTask.checked
+                          ? 'bg-green-500/20 text-green-400'
+                          : 'bg-[#3d444d] text-[#9fadbc]'
+                      }`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      {new Date(selectedTask.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </div>
+                  )}
+
+                  {/* Checklist Progress */}
+                  {selectedTask.checklistTotal && selectedTask.checklistTotal > 0 && (
+                    <div className="flex items-center gap-2 px-2 py-1 rounded bg-[#3d444d] text-xs">
+                      <svg className="w-3.5 h-3.5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      <div className="w-16 h-1.5 bg-[#1a1f26] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-accent rounded-full transition-all"
+                          style={{ width: `${((selectedTask.checklistChecked || 0) / selectedTask.checklistTotal) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-[#9fadbc]">
+                        {selectedTask.checklistChecked || 0}/{selectedTask.checklistTotal}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
             {/* Modal Body */}
             <div className="p-6 max-h-[70vh] overflow-y-auto">
@@ -5730,6 +5805,96 @@ export default function App() {
                   )}
                 </div>
               )}
+
+              {/* Smart Insights */}
+              {(() => {
+                // Analyze task for smart insights
+                const insights: Array<{ icon: string; label: string; value: string; color?: string }> = [];
+                const taskText = selectedTask.text.toLowerCase();
+                const description = (selectedTask.description || '').toLowerCase();
+                const allText = taskText + ' ' + description;
+
+                // Detect media type
+                const yearMatch = selectedTask.text.match(/\((\d{4})(?:\s*-\s*(\d{4}|present))?\)/i);
+                const hasSeasonChecklist = selectedTask.checklists?.some(cl =>
+                  cl.name.toLowerCase().includes('season') || cl.name.toLowerCase().includes('episode')
+                );
+                const hasIMDbLink = selectedTask.links?.some(l => l.url.includes('imdb.com'));
+                const hasTMDbLink = selectedTask.links?.some(l => l.url.includes('themoviedb.org'));
+                const hasYouTubeLink = selectedTask.links?.some(l => l.url.includes('youtube.com') || l.url.includes('youtu.be'));
+
+                // Media type detection
+                if (hasSeasonChecklist || allText.match(/\b(season|episode|series|tv show)\b/)) {
+                  insights.push({ icon: '📺', label: 'Type', value: 'TV Series', color: '#579dff' });
+                } else if (allText.match(/\b(movie|film)\b/) || (yearMatch && !hasSeasonChecklist)) {
+                  insights.push({ icon: '🎬', label: 'Type', value: 'Movie', color: '#f87171' });
+                } else if (allText.match(/\b(anime|manga)\b/)) {
+                  insights.push({ icon: '🎌', label: 'Type', value: 'Anime', color: '#c084fc' });
+                }
+
+                // Year info
+                if (yearMatch) {
+                  const startYear = yearMatch[1];
+                  const endYear = yearMatch[2];
+                  insights.push({
+                    icon: '📅',
+                    label: 'Year',
+                    value: endYear ? `${startYear} - ${endYear}` : startYear
+                  });
+                }
+
+                // Checklist summary
+                if (selectedTask.checklists && selectedTask.checklists.length > 0) {
+                  const totalItems = selectedTask.checklists.reduce((sum, cl) => sum + cl.items.length, 0);
+                  const checkedItems = selectedTask.checklists.reduce(
+                    (sum, cl) => sum + cl.items.filter(i => i.checked).length, 0
+                  );
+                  const percentage = totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
+                  insights.push({
+                    icon: '✅',
+                    label: 'Progress',
+                    value: `${percentage}% (${checkedItems}/${totalItems})`,
+                    color: percentage === 100 ? '#22c55e' : percentage > 50 ? '#eab308' : '#9fadbc'
+                  });
+                }
+
+                // Link sources
+                const sources: string[] = [];
+                if (hasIMDbLink) sources.push('IMDb');
+                if (hasTMDbLink) sources.push('TMDb');
+                if (hasYouTubeLink) sources.push('YouTube');
+                if (sources.length > 0) {
+                  insights.push({ icon: '🔗', label: 'Sources', value: sources.join(', ') });
+                }
+
+                if (insights.length === 0) return null;
+
+                return (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      <h3 className="text-[#b6c2cf] font-semibold">Smart Insights</h3>
+                    </div>
+                    <div className="bg-[#22272b] rounded-lg p-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        {insights.map((insight, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <span className="text-lg">{insight.icon}</span>
+                            <div>
+                              <p className="text-[#6b7280] text-xs">{insight.label}</p>
+                              <p className="text-sm font-medium" style={{ color: insight.color || '#b6c2cf' }}>
+                                {insight.value}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Activity */}
               <div>
