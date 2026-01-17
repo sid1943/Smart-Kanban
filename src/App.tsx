@@ -2642,6 +2642,14 @@ export default function App() {
         const checklistMap = new Map<string, TrelloChecklist>();
         (data.checklists || []).forEach(cl => checklistMap.set(cl.id, cl));
 
+        // Also create a card ID to checklists mapping (fallback for when idChecklists is empty)
+        const checklistsByCard = new Map<string, TrelloChecklist[]>();
+        (data.checklists || []).forEach(cl => {
+          const existing = checklistsByCard.get(cl.idCard) || [];
+          existing.push(cl);
+          checklistsByCard.set(cl.idCard, existing);
+        });
+
         // Create member ID to name mapping
         const memberMap = new Map<string, string>();
         (data.members || []).forEach(m => memberMap.set(m.id, m.fullName || m.username));
@@ -2680,14 +2688,24 @@ export default function App() {
           }));
 
           // Get full checklists for this card
-          const cardChecklists: Checklist[] = (card.idChecklists || [])
-            .map(clId => checklistMap.get(clId))
-            .filter((cl): cl is TrelloChecklist => cl !== undefined)
+          // Try via card.idChecklists first, then fallback to checklistsByCard mapping
+          let rawChecklists: TrelloChecklist[] = [];
+
+          if (card.idChecklists && card.idChecklists.length > 0) {
+            rawChecklists = card.idChecklists
+              .map(clId => checklistMap.get(clId))
+              .filter((cl): cl is TrelloChecklist => cl !== undefined);
+          } else {
+            // Fallback: find checklists by card ID
+            rawChecklists = checklistsByCard.get(card.id) || [];
+          }
+
+          const cardChecklists: Checklist[] = rawChecklists
             .sort((a, b) => a.pos - b.pos)
             .map(cl => ({
               id: cl.id,
               name: cl.name,
-              items: cl.checkItems
+              items: (cl.checkItems || [])
                 .sort((a, b) => a.pos - b.pos)
                 .map(item => ({
                   id: item.id,

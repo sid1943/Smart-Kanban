@@ -5,6 +5,17 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-01-17
+
+### Fixed
+
+#### Trello Import - Checklist Detection
+- Fixed checklists not being imported when `card.idChecklists` is empty
+- Added fallback to match checklists by `idCard` field from the checklists array
+- Checklists now properly appear in imported cards
+
+---
+
 ## [0.2.5] - 2026-01-17
 
 ### Enhanced
