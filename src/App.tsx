@@ -2965,6 +2965,7 @@ export default function App() {
                     key={goal.id}
                     onClick={() => {
                       setActiveGoalId(goal.id);
+                      setViewMode('goal');
                       setSelectedBackground(goal.backgroundImage || boardBackgrounds[0]);
                     }}
                     className="rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-all group"
@@ -3077,6 +3078,7 @@ export default function App() {
                           key={board.id}
                           onClick={() => {
                             setActiveGoalId(board.goalId);
+                            setViewMode('goal');
                             if (goal?.backgroundImage) {
                               setSelectedBackground(goal.backgroundImage);
                             }
@@ -3137,6 +3139,7 @@ export default function App() {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setActiveGoalId(board.goalId);
+                                    setViewMode('goal');
                                   }}
                                   className="text-[#579dff] text-xs hover:underline flex items-center gap-1 mx-auto"
                                 >
