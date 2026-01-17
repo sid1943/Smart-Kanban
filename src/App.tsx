@@ -1935,6 +1935,7 @@ export default function App() {
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingDescription, setEditingDescription] = useState(false);
   const [_activeBoardCategory, setActiveBoardCategory] = useState<string | null>(null);
   const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -2531,6 +2532,88 @@ export default function App() {
     return links;
   };
 
+  // Helper to render description text with clickable links
+  const renderDescriptionWithLinks = (text: string): React.ReactNode => {
+    if (!text) return null;
+
+    // Pattern to match markdown links [text](url "title") or [text](url)
+    const markdownLinkRegex = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+    // Pattern to match plain URLs
+    const plainUrlRegex = /(?<!\]\()https?:\/\/[^\s\])<>"]+/g;
+
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let key = 0;
+
+    // First, find all markdown links and plain URLs with their positions
+    const allMatches: Array<{ start: number; end: number; url: string; text: string; type: 'markdown' | 'plain' }> = [];
+
+    // Find markdown links
+    let match;
+    while ((match = markdownLinkRegex.exec(text)) !== null) {
+      allMatches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[1],
+        url: match[2].split(' ')[0].replace(/"/g, ''), // Clean URL
+        type: 'markdown'
+      });
+    }
+
+    // Find plain URLs (not inside markdown)
+    while ((match = plainUrlRegex.exec(text)) !== null) {
+      // Check if this URL is inside a markdown link
+      const isInsideMarkdown = allMatches.some(m =>
+        m.type === 'markdown' && match.index >= m.start && match.index < m.end
+      );
+      if (!isInsideMarkdown) {
+        let domain = match[0];
+        try {
+          domain = new URL(match[0]).hostname.replace('www.', '');
+        } catch { /* use full URL */ }
+        allMatches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          text: domain,
+          url: match[0],
+          type: 'plain'
+        });
+      }
+    }
+
+    // Sort by position
+    allMatches.sort((a, b) => a.start - b.start);
+
+    // Build the rendered output
+    for (const m of allMatches) {
+      // Add text before this match
+      if (m.start > lastIndex) {
+        parts.push(<span key={key++}>{text.slice(lastIndex, m.start)}</span>);
+      }
+      // Add the link
+      parts.push(
+        <a
+          key={key++}
+          href={m.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent hover:text-accent-light underline break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {m.text}
+        </a>
+      );
+      lastIndex = m.end;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
+    }
+
+    return parts.length > 0 ? parts : text;
+  };
+
   // Trello import handler
   const handleTrelloImport = (file: File) => {
     const reader = new FileReader();
@@ -2987,6 +3070,7 @@ export default function App() {
       return goal;
     }));
     setSelectedTaskId(null);
+    setEditingDescription(false);
   };
 
   // Update goal background
@@ -5149,7 +5233,7 @@ export default function App() {
       {selectedTask && (
         <div
           className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-16 px-4"
-          onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); }}
+          onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
         >
           <div
             className="bg-[#1a1f26] rounded-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl"
@@ -5224,7 +5308,7 @@ export default function App() {
                   </svg>
                 </button>
                 <button
-                  onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); }}
+                  onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
                   className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -5235,61 +5319,194 @@ export default function App() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
+            <div className="p-6 max-h-[70vh] overflow-y-auto">
               {/* Description */}
               <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-                  </svg>
-                  <h3 className="text-[#b6c2cf] font-semibold">Description</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                    <h3 className="text-[#b6c2cf] font-semibold">Description</h3>
+                  </div>
+                  {selectedTask.description && (
+                    <button
+                      onClick={() => setEditingDescription(!editingDescription)}
+                      className="text-xs text-[#9fadbc] hover:text-accent px-2 py-1 rounded hover:bg-[#3d444d] transition-all"
+                    >
+                      {editingDescription ? 'Done' : 'Edit'}
+                    </button>
+                  )}
                 </div>
-                <textarea
-                  className="w-full bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[100px]
-                           border border-transparent focus:border-[#5a6370] focus:outline-none resize-none"
-                  placeholder="Add a more detailed description..."
-                  defaultValue={selectedTask.description || ''}
-                  onBlur={(e) => handleEditTask(selectedTask.id, { description: e.target.value })}
-                />
-              </div>
-
-              {/* Link/Resource */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
-                  <h3 className="text-[#b6c2cf] font-semibold">Resource Link</h3>
-                </div>
-                {selectedTask.link ? (
-                  <a
-                    href={selectedTask.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-4 transition-all group"
-                  >
-                    <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[#b6c2cf] font-medium group-hover:text-accent transition-all">
-                        {selectedTask.linkText || 'Open Resource'}
-                      </p>
-                      <p className="text-[#9fadbc] text-sm truncate">{selectedTask.link}</p>
-                    </div>
-                  </a>
-                ) : (
-                  <input
-                    type="url"
-                    className="w-full bg-[#22272b] rounded-lg px-4 py-3 text-[#9fadbc] text-sm
-                             border border-transparent focus:border-[#5a6370] focus:outline-none"
-                    placeholder="Add a link (https://...)"
-                    onBlur={(e) => e.target.value && handleEditTask(selectedTask.id, { link: e.target.value })}
+                {editingDescription || !selectedTask.description ? (
+                  <textarea
+                    className="w-full bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[100px]
+                             border border-transparent focus:border-[#5a6370] focus:outline-none resize-none"
+                    placeholder="Add a more detailed description..."
+                    defaultValue={selectedTask.description || ''}
+                    onBlur={(e) => {
+                      handleEditTask(selectedTask.id, { description: e.target.value });
+                      if (e.target.value) setEditingDescription(false);
+                    }}
+                    autoFocus={editingDescription}
                   />
+                ) : (
+                  <div
+                    className="bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[60px] whitespace-pre-wrap cursor-pointer hover:bg-[#282e33] transition-all"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    {renderDescriptionWithLinks(selectedTask.description)}
+                  </div>
                 )}
               </div>
+
+              {/* Checklists / Seasons */}
+              {selectedTask.checklists && selectedTask.checklists.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <h3 className="text-[#b6c2cf] font-semibold">
+                      {selectedTask.checklists.length === 1 ? selectedTask.checklists[0].name : 'Checklists'}
+                    </h3>
+                  </div>
+                  <div className="space-y-4">
+                    {selectedTask.checklists.map((checklist) => {
+                      const checkedCount = checklist.items.filter(i => i.checked).length;
+                      const totalCount = checklist.items.length;
+                      const progress = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
+
+                      return (
+                        <div key={checklist.id} className="bg-[#22272b] rounded-lg p-4">
+                          {selectedTask.checklists!.length > 1 && (
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-[#b6c2cf] font-medium text-sm">{checklist.name}</span>
+                              <span className="text-[#9fadbc] text-xs">{checkedCount}/{totalCount}</span>
+                            </div>
+                          )}
+                          {selectedTask.checklists!.length === 1 && (
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-[#9fadbc] text-xs">{checkedCount}/{totalCount} completed</span>
+                              <span className="text-[#9fadbc] text-xs">{Math.round(progress)}%</span>
+                            </div>
+                          )}
+                          {/* Progress bar */}
+                          <div className="w-full h-1.5 bg-[#3d444d] rounded-full mb-3 overflow-hidden">
+                            <div
+                              className="h-full bg-accent rounded-full transition-all duration-300"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          {/* Checklist items */}
+                          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                            {checklist.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-start gap-3 py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all"
+                              >
+                                <div className={`w-4 h-4 mt-0.5 rounded border flex-shrink-0 flex items-center justify-center
+                                  ${item.checked
+                                    ? 'bg-accent border-accent'
+                                    : 'border-[#5a6370]'
+                                  }`}
+                                >
+                                  {item.checked && (
+                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <span className={`text-sm ${item.checked ? 'text-[#6b7280] line-through' : 'text-[#9fadbc]'}`}>
+                                  {item.text}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Extracted Links */}
+              {selectedTask.links && selectedTask.links.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    <h3 className="text-[#b6c2cf] font-semibold">Links ({selectedTask.links.length})</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedTask.links.map((link, index) => (
+                      <a
+                        key={index}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-3 transition-all group"
+                      >
+                        <div className="w-8 h-8 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[#b6c2cf] text-sm font-medium group-hover:text-accent transition-all truncate">
+                            {link.text || new URL(link.url).hostname}
+                          </p>
+                          <p className="text-[#6b7280] text-xs truncate">{link.url}</p>
+                        </div>
+                        <span className="text-[#6b7280] text-xs capitalize px-2 py-0.5 bg-[#3d444d] rounded">
+                          {link.source}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Resource Link (manual) */}
+              {!selectedTask.links?.length && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    <h3 className="text-[#b6c2cf] font-semibold">Resource Link</h3>
+                  </div>
+                  {selectedTask.link ? (
+                    <a
+                      href={selectedTask.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-4 transition-all group"
+                    >
+                      <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center">
+                        <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#b6c2cf] font-medium group-hover:text-accent transition-all">
+                          {selectedTask.linkText || 'Open Resource'}
+                        </p>
+                        <p className="text-[#9fadbc] text-sm truncate">{selectedTask.link}</p>
+                      </div>
+                    </a>
+                  ) : (
+                    <input
+                      type="url"
+                      className="w-full bg-[#22272b] rounded-lg px-4 py-3 text-[#9fadbc] text-sm
+                               border border-transparent focus:border-[#5a6370] focus:outline-none"
+                      placeholder="Add a link (https://...)"
+                      onBlur={(e) => e.target.value && handleEditTask(selectedTask.id, { link: e.target.value })}
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Activity */}
               <div>

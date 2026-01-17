@@ -5,6 +5,29 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-01-17
+
+### Enhanced
+
+#### Task Detail Modal Improvements
+- **Description with clickable links** - URLs and markdown links in descriptions are now rendered as clickable links
+  - Markdown links `[text](url)` are properly parsed and displayed
+  - Plain URLs are auto-detected and made clickable with domain name as text
+  - Click anywhere in description to edit, "Edit" button to toggle modes
+- **Checklists display** - Imported checklists (seasons) now show in task modal
+  - Progress bar showing completion percentage
+  - Individual checklist items with checkmarks
+  - Scrollable list for long checklists
+  - Shows checklist name and completion count
+- **Extracted links section** - Links from Trello import displayed as clickable cards
+  - Shows link text, URL, and source badge (description, attachment, comment)
+  - External link icon for visual indication
+  - Hover effects for better UX
+- Modal body now scrollable with `max-h-[70vh]` for long content
+- Resource link section hidden when extracted links are available
+
+---
+
 ## [0.2.4] - 2026-01-17
 
 ### Enhanced
