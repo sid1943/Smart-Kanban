@@ -5486,7 +5486,7 @@ export default function App() {
                   </svg>
                 </button>
               </div>
-            </div>
+              </div>
 
               {/* Info Bar: Labels, Due Date, Progress */}
               {(selectedTask.labels?.length || selectedTask.dueDate || selectedTask.checklistTotal) && (
@@ -5545,6 +5545,7 @@ export default function App() {
                   )}
                 </div>
               )}
+            </div>
 
             {/* Modal Body */}
             <div className="p-6 max-h-[70vh] overflow-y-auto">
