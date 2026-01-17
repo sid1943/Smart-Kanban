@@ -50,7 +50,9 @@ interface Attachment {
 interface ExtractedLink {
   url: string;
   text?: string;
-  source: 'description' | 'attachment' | 'name' | 'comment';
+  source: 'description' | 'attachment' | 'name' | 'comment' | 'checklist';
+  cardTitle?: string;  // The card/task title this link belongs to
+  checklistName?: string;  // If from a checklist, which checklist
 }
 
 interface Comment {
@@ -2536,7 +2538,7 @@ export default function App() {
   };
 
   // Helper to render description text with clickable links
-  const renderDescriptionWithLinks = (text: string): React.ReactNode => {
+  const renderDescriptionWithLinks = (text: string, taskTitle?: string): React.ReactNode => {
     if (!text) return null;
 
     // Pattern to match markdown links [text](url "title") or [text](url)
@@ -2557,11 +2559,15 @@ export default function App() {
       let linkText = match[1];
       const linkUrl = match[2].split(' ')[0].replace(/"/g, ''); // Clean URL
 
-      // If the link text is itself a URL, shorten it to domain name
+      // If the link text is itself a URL, use task title or domain name
       if (linkText.match(/^https?:\/\//)) {
-        try {
-          linkText = new URL(linkText).hostname.replace('www.', '');
-        } catch { /* keep original text */ }
+        if (taskTitle) {
+          linkText = taskTitle;
+        } else {
+          try {
+            linkText = new URL(linkText).hostname.replace('www.', '');
+          } catch { /* keep original text */ }
+        }
       }
 
       allMatches.push({
@@ -2580,14 +2586,17 @@ export default function App() {
         m.type === 'markdown' && match.index >= m.start && match.index < m.end
       );
       if (!isInsideMarkdown) {
-        let domain = match[0];
-        try {
-          domain = new URL(match[0]).hostname.replace('www.', '');
-        } catch { /* use full URL */ }
+        // Use task title for plain URLs, or fall back to domain
+        let displayText = taskTitle;
+        if (!displayText) {
+          try {
+            displayText = new URL(match[0]).hostname.replace('www.', '');
+          } catch { displayText = match[0]; }
+        }
         allMatches.push({
           start: match.index,
           end: match.index + match[0].length,
-          text: domain,
+          text: displayText,
           url: match[0],
           type: 'plain'
         });
@@ -2764,15 +2773,16 @@ export default function App() {
 
           // Extract all links from various sources
           const extractedLinks: ExtractedLink[] = [];
+          const cardTitle = card.name;
 
           // 1. Links from card name
           const nameLinks = extractUrlsFromText(card.name);
-          nameLinks.forEach(l => extractedLinks.push({ ...l, source: 'name' }));
+          nameLinks.forEach(l => extractedLinks.push({ ...l, source: 'name', cardTitle }));
 
           // 2. Links from description
           if (card.desc) {
             const descLinks = extractUrlsFromText(card.desc);
-            descLinks.forEach(l => extractedLinks.push({ ...l, source: 'description' }));
+            descLinks.forEach(l => extractedLinks.push({ ...l, source: 'description', cardTitle }));
           }
 
           // 3. Link attachments (not uploaded files)
@@ -2785,6 +2795,7 @@ export default function App() {
                   url: att.url,
                   text: att.name,
                   source: 'attachment',
+                  cardTitle,
                 });
               }
             });
@@ -2794,8 +2805,25 @@ export default function App() {
             const commentLinks = extractUrlsFromText(comment.text);
             commentLinks.forEach(l => {
               if (!extractedLinks.some(el => el.url === l.url)) {
-                extractedLinks.push({ ...l, source: 'comment' });
+                extractedLinks.push({ ...l, source: 'comment', cardTitle });
               }
+            });
+          });
+
+          // 5. Links from checklist items
+          cardChecklists.forEach(checklist => {
+            checklist.items.forEach(item => {
+              const itemLinks = extractUrlsFromText(item.text);
+              itemLinks.forEach(l => {
+                if (!extractedLinks.some(el => el.url === l.url)) {
+                  extractedLinks.push({
+                    ...l,
+                    source: 'checklist',
+                    cardTitle,
+                    checklistName: checklist.name,
+                  });
+                }
+              });
             });
           });
 
@@ -5480,7 +5508,7 @@ export default function App() {
                     className="bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[60px] whitespace-pre-wrap cursor-pointer hover:bg-[#282e33] transition-all"
                     onClick={() => setEditingDescription(true)}
                   >
-                    {renderDescriptionWithLinks(selectedTask.description)}
+                    {renderDescriptionWithLinks(selectedTask.description, selectedTask.text)}
                   </div>
                 )}
               </div>
@@ -5613,30 +5641,52 @@ export default function App() {
                     <h3 className="text-[#b6c2cf] font-semibold">Links ({selectedTask.links.length})</h3>
                   </div>
                   <div className="space-y-2">
-                    {selectedTask.links.map((link, index) => (
-                      <a
-                        key={index}
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-3 transition-all group"
-                      >
-                        <div className="w-8 h-8 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[#b6c2cf] text-sm font-medium group-hover:text-accent transition-all truncate">
-                            {link.text || new URL(link.url).hostname}
-                          </p>
-                          <p className="text-[#6b7280] text-xs truncate">{link.url}</p>
-                        </div>
-                        <span className="text-[#6b7280] text-xs capitalize px-2 py-0.5 bg-[#3d444d] rounded">
-                          {link.source}
-                        </span>
-                      </a>
-                    ))}
+                    {selectedTask.links.map((link, index) => {
+                      // Determine display text: prefer attachment name, then card title, then domain
+                      let displayText = link.text;
+                      if (!displayText || displayText.match(/^https?:\/\//)) {
+                        // If text is missing or is a URL, use card title or domain
+                        displayText = link.cardTitle || (() => {
+                          try { return new URL(link.url).hostname.replace('www.', ''); }
+                          catch { return link.url; }
+                        })();
+                      }
+
+                      // Source label with checklist context
+                      const sourceLabel = link.source === 'checklist' && link.checklistName
+                        ? `${link.checklistName}`
+                        : link.source;
+
+                      return (
+                        <a
+                          key={index}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-3 transition-all group"
+                        >
+                          <div className="w-8 h-8 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[#b6c2cf] text-sm font-medium group-hover:text-accent transition-all truncate">
+                              {displayText}
+                            </p>
+                            <p className="text-[#6b7280] text-xs truncate">
+                              {(() => {
+                                try { return new URL(link.url).hostname.replace('www.', ''); }
+                                catch { return link.url; }
+                              })()}
+                            </p>
+                          </div>
+                          <span className="text-[#6b7280] text-xs px-2 py-0.5 bg-[#3d444d] rounded max-w-[100px] truncate">
+                            {sourceLabel}
+                          </span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}
