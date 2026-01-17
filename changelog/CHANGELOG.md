@@ -5,6 +5,29 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-01-17
+
+### Fixed
+
+#### Import Cancel Bug
+- Import now requires confirmation before saving
+- Clicking cancel, X button, or backdrop properly discards the import
+- Changed modal title from "Import Successful" to "Import Preview"
+
+#### Link Display in Description
+- URLs used as link text are now shortened to domain name
+- Example: `[https://www.imdb.com/title/tt123](url)` now shows as `imdb.com`
+
+### Added
+
+#### Interactive Checklists
+- Checklist items are now clickable to toggle completion status
+- Added "Add an item" button at bottom of each checklist
+- Press Enter to add, Escape to cancel
+- Progress bar and counts update in real-time
+
+---
+
 ## [0.2.6] - 2026-01-17
 
 ### Fixed

@@ -1936,6 +1936,8 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [addingChecklistItem, setAddingChecklistItem] = useState<string | null>(null);
+  const [newChecklistItemText, setNewChecklistItemText] = useState('');
   const [_activeBoardCategory, setActiveBoardCategory] = useState<string | null>(null);
   const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -1998,6 +2000,7 @@ export default function App() {
   const [showTrelloImportModal, setShowTrelloImportModal] = useState(false);
   const [trelloImportResult, setTrelloImportResult] = useState<TrelloImportResult | null>(null);
   const [trelloImportError, setTrelloImportError] = useState<string | null>(null);
+  const [pendingImportGoal, setPendingImportGoal] = useState<StoredGoal | null>(null);
 
   // Workspace customization state
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces);
@@ -2551,11 +2554,21 @@ export default function App() {
     // Find markdown links
     let match;
     while ((match = markdownLinkRegex.exec(text)) !== null) {
+      let linkText = match[1];
+      const linkUrl = match[2].split(' ')[0].replace(/"/g, ''); // Clean URL
+
+      // If the link text is itself a URL, shorten it to domain name
+      if (linkText.match(/^https?:\/\//)) {
+        try {
+          linkText = new URL(linkText).hostname.replace('www.', '');
+        } catch { /* keep original text */ }
+      }
+
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
-        text: match[1],
-        url: match[2].split(' ')[0].replace(/"/g, ''), // Clean URL
+        text: linkText,
+        url: linkUrl,
         type: 'markdown'
       });
     }
@@ -2918,11 +2931,8 @@ export default function App() {
           status: 'in_progress',
         };
 
-        // Add the goal
-        setGoals(prev => [...prev, newGoal]);
-
-        // Also add the list names as category columns if they don't exist
-        // This is handled dynamically in the task view
+        // Store goal as pending (only add on confirm)
+        setPendingImportGoal(newGoal);
 
         setTrelloImportResult({
           boardName: data.name || 'Trello Board',
@@ -3069,6 +3079,79 @@ export default function App() {
           tasks: goal.tasks.map(task =>
             task.id === taskId ? { ...task, ...updates } : task
           ),
+        };
+      }
+      return goal;
+    }));
+  };
+
+  // Add item to a checklist
+  const handleAddChecklistItem = (taskId: string, checklistId: string, text: string) => {
+    if (!activeGoalId || !text.trim()) return;
+    const newItem: ChecklistItem = {
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: text.trim(),
+      checked: false,
+    };
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        return {
+          ...goal,
+          tasks: goal.tasks.map(task => {
+            if (task.id === taskId && task.checklists) {
+              return {
+                ...task,
+                checklists: task.checklists.map(cl =>
+                  cl.id === checklistId
+                    ? { ...cl, items: [...cl.items, newItem] }
+                    : cl
+                ),
+                checklistTotal: (task.checklistTotal || 0) + 1,
+              };
+            }
+            return task;
+          }),
+        };
+      }
+      return goal;
+    }));
+    setNewChecklistItemText('');
+    setAddingChecklistItem(null);
+  };
+
+  // Toggle checklist item
+  const handleToggleChecklistItem = (taskId: string, checklistId: string, itemId: string) => {
+    if (!activeGoalId) return;
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        return {
+          ...goal,
+          tasks: goal.tasks.map(task => {
+            if (task.id === taskId && task.checklists) {
+              let checkedDelta = 0;
+              const updatedChecklists = task.checklists.map(cl => {
+                if (cl.id === checklistId) {
+                  return {
+                    ...cl,
+                    items: cl.items.map(item => {
+                      if (item.id === itemId) {
+                        checkedDelta = item.checked ? -1 : 1;
+                        return { ...item, checked: !item.checked };
+                      }
+                      return item;
+                    }),
+                  };
+                }
+                return cl;
+              });
+              return {
+                ...task,
+                checklists: updatedChecklists,
+                checklistChecked: (task.checklistChecked || 0) + checkedDelta,
+              };
+            }
+            return task;
+          }),
         };
       }
       return goal;
@@ -3660,7 +3743,11 @@ export default function App() {
           {showTrelloImportModal && (
             <div
               className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-16 px-4"
-              onClick={() => setShowTrelloImportModal(false)}
+              onClick={() => {
+                setPendingImportGoal(null);
+                setTrelloImportResult(null);
+                setShowTrelloImportModal(false);
+              }}
             >
               <div
                 className="bg-[#1a1f26] rounded-xl w-full max-w-md shadow-2xl"
@@ -3680,12 +3767,16 @@ export default function App() {
                         <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        Import Successful
+                        Import Preview
                       </>
                     )}
                   </h2>
                   <button
-                    onClick={() => setShowTrelloImportModal(false)}
+                    onClick={() => {
+                      setPendingImportGoal(null);
+                      setTrelloImportResult(null);
+                      setShowTrelloImportModal(false);
+                    }}
                     className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3740,18 +3831,34 @@ export default function App() {
                       </div>
 
                       <p className="text-[#9fadbc] text-xs">
-                        Your Trello board has been fully imported with all checklists, attachments, comments, links, labels, due dates, and members.
+                        Ready to import with all checklists, attachments, comments, links, labels, due dates, and members.
                       </p>
                     </div>
                   )}
 
-                  <div className="flex justify-end mt-6">
+                  <div className="flex justify-end gap-3 mt-6">
                     <button
-                      onClick={() => setShowTrelloImportModal(false)}
-                      className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded text-sm"
+                      onClick={() => {
+                        setPendingImportGoal(null);
+                        setTrelloImportResult(null);
+                        setShowTrelloImportModal(false);
+                      }}
+                      className="px-4 py-2 bg-[#3d444d] hover:bg-[#4d545d] text-white rounded text-sm"
                     >
-                      Done
+                      Cancel
                     </button>
+                    {pendingImportGoal && (
+                      <button
+                        onClick={() => {
+                          setGoals(prev => [...prev, pendingImportGoal]);
+                          setPendingImportGoal(null);
+                          setShowTrelloImportModal(false);
+                        }}
+                        className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded text-sm"
+                      >
+                        Import
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -5421,7 +5528,8 @@ export default function App() {
                             {checklist.items.map((item) => (
                               <div
                                 key={item.id}
-                                className="flex items-start gap-3 py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all"
+                                onClick={() => handleToggleChecklistItem(selectedTask.id, checklist.id, item.id)}
+                                className="flex items-start gap-3 py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all cursor-pointer"
                               >
                                 <div className={`w-4 h-4 mt-0.5 rounded border flex-shrink-0 flex items-center justify-center
                                   ${item.checked
@@ -5441,6 +5549,53 @@ export default function App() {
                               </div>
                             ))}
                           </div>
+                          {/* Add item */}
+                          {addingChecklistItem === checklist.id ? (
+                            <div className="mt-3 flex gap-2">
+                              <input
+                                type="text"
+                                value={newChecklistItemText}
+                                onChange={(e) => setNewChecklistItemText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleAddChecklistItem(selectedTask.id, checklist.id, newChecklistItemText);
+                                  } else if (e.key === 'Escape') {
+                                    setAddingChecklistItem(null);
+                                    setNewChecklistItemText('');
+                                  }
+                                }}
+                                placeholder="Add an item..."
+                                className="flex-1 bg-[#3d444d] rounded px-3 py-1.5 text-sm text-white placeholder-[#9fadbc]
+                                         border border-transparent focus:border-accent focus:outline-none"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleAddChecklistItem(selectedTask.id, checklist.id, newChecklistItemText)}
+                                className="px-3 py-1.5 bg-accent hover:bg-accent-light text-white text-sm rounded"
+                              >
+                                Add
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setAddingChecklistItem(null);
+                                  setNewChecklistItemText('');
+                                }}
+                                className="px-3 py-1.5 bg-[#3d444d] hover:bg-[#4d545d] text-white text-sm rounded"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setAddingChecklistItem(checklist.id)}
+                              className="mt-3 flex items-center gap-2 text-[#9fadbc] hover:text-white text-sm py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                              Add an item
+                            </button>
+                          )}
                         </div>
                       );
                     })}
