@@ -5,6 +5,25 @@ All notable changes to Smart Kanban will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-01-17
+
+### Enhanced
+
+#### Trello Import - Link Extraction
+- Added automatic link extraction from multiple sources:
+  - **Card descriptions** - Markdown links `[text](url)` and plain URLs
+  - **Card names** - URLs embedded in card titles
+  - **Link attachments** - Non-uploaded link attachments
+  - **Comments** - URLs in card comments
+- Links are deduplicated across sources
+- Each link tracks its source (description, attachment, name, comment)
+- Domain names are extracted as link text for plain URLs
+- Import modal now shows total links extracted
+- New `ExtractedLink` interface for typed link data
+- New `links` field on TaskItem for storing extracted links
+
+---
+
 ## [0.2.3] - 2026-01-17
 
 ### Enhanced

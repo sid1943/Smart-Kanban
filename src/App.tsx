@@ -44,6 +44,13 @@ interface Attachment {
   name: string;
   url: string;
   type?: string;
+  isUpload?: boolean;
+}
+
+interface ExtractedLink {
+  url: string;
+  text?: string;
+  source: 'description' | 'attachment' | 'name' | 'comment';
 }
 
 interface Comment {
@@ -74,6 +81,7 @@ interface TaskItem {
   coverImage?: string;
   assignees?: string[];
   position?: number;
+  links?: ExtractedLink[];
 }
 
 // User's personal info for smart task suggestions
@@ -311,6 +319,7 @@ interface TrelloImportResult {
   attachmentsImported: number;
   commentsImported: number;
   listsImported: number;
+  linksExtracted: number;
 }
 
 // Workspace definition
@@ -2493,6 +2502,35 @@ export default function App() {
     return days;
   };
 
+  // Helper to extract URLs from text (description, comments, etc.)
+  const extractUrlsFromText = (text: string): Array<{ url: string; text?: string }> => {
+    const links: Array<{ url: string; text?: string }> = [];
+
+    // Match markdown links: [text](url)
+    const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    let match;
+    while ((match = markdownLinkRegex.exec(text)) !== null) {
+      links.push({ text: match[1], url: match[2] });
+    }
+
+    // Match plain URLs (not already captured in markdown)
+    const urlRegex = /(?<!\]\()https?:\/\/[^\s\])<>]+/g;
+    while ((match = urlRegex.exec(text)) !== null) {
+      // Check if this URL wasn't already captured as a markdown link
+      if (!links.some(l => l.url === match[0])) {
+        // Try to extract domain as text
+        try {
+          const domain = new URL(match[0]).hostname.replace('www.', '');
+          links.push({ url: match[0], text: domain });
+        } catch {
+          links.push({ url: match[0] });
+        }
+      }
+    }
+
+    return links;
+  };
+
   // Trello import handler
   const handleTrelloImport = (file: File) => {
     const reader = new FileReader();
@@ -2582,12 +2620,13 @@ export default function App() {
             0
           );
 
-          // Get attachments
+          // Get attachments and identify link vs uploaded attachments
           const attachments: Attachment[] = (card.attachments || []).map(att => ({
             id: att.id,
             name: att.name,
             url: att.url,
             type: att.mimeType,
+            isUpload: att.isUpload,
           }));
 
           // Get comments for this card
@@ -2609,6 +2648,43 @@ export default function App() {
             }
           }
 
+          // Extract all links from various sources
+          const extractedLinks: ExtractedLink[] = [];
+
+          // 1. Links from card name
+          const nameLinks = extractUrlsFromText(card.name);
+          nameLinks.forEach(l => extractedLinks.push({ ...l, source: 'name' }));
+
+          // 2. Links from description
+          if (card.desc) {
+            const descLinks = extractUrlsFromText(card.desc);
+            descLinks.forEach(l => extractedLinks.push({ ...l, source: 'description' }));
+          }
+
+          // 3. Link attachments (not uploaded files)
+          (card.attachments || [])
+            .filter(att => !att.isUpload)
+            .forEach(att => {
+              // Don't duplicate if already extracted
+              if (!extractedLinks.some(l => l.url === att.url)) {
+                extractedLinks.push({
+                  url: att.url,
+                  text: att.name,
+                  source: 'attachment',
+                });
+              }
+            });
+
+          // 4. Links from comments
+          comments.forEach(comment => {
+            const commentLinks = extractUrlsFromText(comment.text);
+            commentLinks.forEach(l => {
+              if (!extractedLinks.some(el => el.url === l.url)) {
+                extractedLinks.push({ ...l, source: 'comment' });
+              }
+            });
+          });
+
           tasks.push({
             id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             text: card.name,
@@ -2627,6 +2703,7 @@ export default function App() {
             coverColor,
             coverImage,
             position: card.pos,
+            links: extractedLinks.length > 0 ? extractedLinks : undefined,
           });
         });
 
@@ -2721,6 +2798,7 @@ export default function App() {
         const totalChecklists = tasks.reduce((sum, t) => sum + (t.checklists?.length || 0), 0);
         const totalAttachments = tasks.reduce((sum, t) => sum + (t.attachments?.length || 0), 0);
         const totalComments = tasks.reduce((sum, t) => sum + (t.comments?.length || 0), 0);
+        const totalLinks = tasks.reduce((sum, t) => sum + (t.links?.length || 0), 0);
 
         // Create one goal for the entire board
         const newGoal: StoredGoal = {
@@ -2753,6 +2831,7 @@ export default function App() {
           attachmentsImported: totalAttachments,
           commentsImported: totalComments,
           listsImported: openLists.length,
+          linksExtracted: totalLinks,
         });
         setTrelloImportError(null);
         setShowTrelloImportModal(true);
@@ -3538,7 +3617,7 @@ export default function App() {
                       {/* Detailed stats */}
                       <div className="bg-[#22272b] rounded-lg p-4">
                         <p className="text-[#9fadbc] text-xs mb-3 uppercase tracking-wider">Also imported:</p>
-                        <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="grid grid-cols-4 gap-2 text-center">
                           <div>
                             <p className="text-lg font-semibold text-white">{trelloImportResult.checklistsImported}</p>
                             <p className="text-[#9fadbc] text-xs">Checklists</p>
@@ -3551,11 +3630,15 @@ export default function App() {
                             <p className="text-lg font-semibold text-white">{trelloImportResult.commentsImported}</p>
                             <p className="text-[#9fadbc] text-xs">Comments</p>
                           </div>
+                          <div>
+                            <p className="text-lg font-semibold text-[#579dff]">{trelloImportResult.linksExtracted}</p>
+                            <p className="text-[#9fadbc] text-xs">Links</p>
+                          </div>
                         </div>
                       </div>
 
                       <p className="text-[#9fadbc] text-xs">
-                        Your Trello board has been fully imported with all checklists, attachments, comments, labels, due dates, and members.
+                        Your Trello board has been fully imported with all checklists, attachments, comments, links, labels, due dates, and members.
                       </p>
                     </div>
                   )}
