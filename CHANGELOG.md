@@ -4,10 +4,28 @@ All notable changes to Smart Kanban will be documented in this file.
 
 ## [0.3.3] - 2026-01-18
 
+### Problem Solved: Why Imports Failed to Show Smart Insights
+
+**Root Cause:** Content detection relies on context clues that imports often lack:
+
+| Context Clue | Example | What it Signals |
+|--------------|---------|-----------------|
+| List name | "Marvel - Finished", "To Watch" | Entertainment content |
+| Checklist names | "Season 1", "Season 2" | TV Series |
+| URLs | IMDb, TMDb links | Confirms entertainment |
+| Year patterns | "(2015-2019)" | Multi-year series |
+
+**Why Imports Fail:**
+- Cards land in generic lists like "Uncategorized" or "Backlog"
+- No checklist structure imported yet
+- Missing context = low confidence = no insights
+
+**Solution:** Store content type with task + allow manual override
+
 ### Added
 - **Manual Content Type Selection**: Users can now manually set content type for any card
   - Click the content type badge to change it
-  - "Set type for insights" prompt appears for uncategorized content
+  - Amber "? Set type for insights" prompt appears for uncategorized content
   - Type picker shows suggestions based on detected signals
   - Manual selections are persisted and marked with *
 
@@ -21,10 +39,54 @@ All notable changes to Smart Kanban will be documented in this file.
 - Hook returns `needsUserInput` and `suggestedTypes` for UI prompts
 - Enrichment uses stored type when available (faster, more accurate)
 
-### Architecture
-- New `ContentTypePicker` component for type selection UI
-- Updated `useContentEnrichment` hook with stored type support
-- Added `detectContentType` export for import flow
+### Architecture Flow
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CONTENT DETECTION FLOW                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Import/Create Card                                         │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────┐                                           │
+│  │   Detect    │◄── title + description + list + URLs      │
+│  │ Content Type│                                           │
+│  └──────┬──────┘                                           │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────┐    Yes    ┌──────────────────┐           │
+│  │ Confidence  │──────────►│  Fetch Enrichment │           │
+│  │   >= 40%?   │           │  (TMDb, OMDb...)  │           │
+│  └──────┬──────┘           └──────────────────┘           │
+│         │ No                                                │
+│         ▼                                                   │
+│  ┌─────────────────────┐                                   │
+│  │ Show "Set Type"     │                                   │
+│  │ Prompt to User      │                                   │
+│  └──────────┬──────────┘                                   │
+│             │ User selects                                  │
+│             ▼                                               │
+│  ┌─────────────────────┐                                   │
+│  │ Store contentType   │                                   │
+│  │ contentTypeManual   │                                   │
+│  └──────────┬──────────┘                                   │
+│             │                                               │
+│             ▼                                               │
+│  ┌──────────────────┐                                      │
+│  │ Fetch Enrichment │                                      │
+│  │ with stored type │                                      │
+│  └──────────────────┘                                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### New Files
+- `src/components/ContentTypePicker.tsx` - Type selection UI component
+
+### Modified Files
+- `src/hooks/useContentEnrichment.ts` - Added stored type support, needsUserInput
+- `src/components/TaskDetailModal.tsx` - Clickable badge, type picker integration
+- `src/App.tsx` - Added contentType fields to TaskItem interface
 
 ## [0.3.2] - 2026-01-18
 
