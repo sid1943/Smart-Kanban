@@ -2,6 +2,23 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.2] - 2026-01-18
+
+### Added
+- **Collapsible Links section**: Links are now collapsed by default, click to expand
+- **Your Progress tracking**: New section showing your watch progress vs series total
+  - Visual progress bar (blue = watching, green = completed)
+  - Status badge (Watching/Completed)
+  - Seasons counter (e.g., "3/5 seasons")
+  - Remaining seasons text (e.g., "2 seasons remaining")
+
+### Note on Ratings
+- **TMDb**: Community ratings from The Movie Database users
+- **IMDb**: Community ratings from Internet Movie Database users
+- **Rotten Tomatoes**: Critic scores (shows when available from OMDb API)
+
+Different platforms have different user bases, so ratings may vary.
+
 ## [0.3.1] - 2026-01-18
 
 ### Fixed
