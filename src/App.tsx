@@ -12,7 +12,7 @@ import {
   DragOverEvent,
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
-import SmartInsights from './components/SmartInsights';
+import TaskDetailModal from './components/TaskDetailModal';
 import {
   arrayMove,
   SortableContext,
@@ -1746,7 +1746,7 @@ const boardBackgrounds = [
   'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=400&q=80', // Work desk
 ];
 
-type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas';
+type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal';
 
 // Board/Workspace types
 interface _Board {
@@ -2524,7 +2524,7 @@ export default function App() {
 
     // Match markdown links: [text](url)
     const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = markdownLinkRegex.exec(text)) !== null) {
       links.push({ text: match[1], url: match[2] });
     }
@@ -2532,14 +2532,15 @@ export default function App() {
     // Match plain URLs (not already captured in markdown)
     const urlRegex = /(?<!\]\()https?:\/\/[^\s\])<>]+/g;
     while ((match = urlRegex.exec(text)) !== null) {
+      const urlMatch = match[0];
       // Check if this URL wasn't already captured as a markdown link
-      if (!links.some(l => l.url === match[0])) {
+      if (!links.some(l => l.url === urlMatch)) {
         // Try to extract domain as text
         try {
-          const domain = new URL(match[0]).hostname.replace('www.', '');
-          links.push({ url: match[0], text: domain });
+          const domain = new URL(urlMatch).hostname.replace('www.', '');
+          links.push({ url: urlMatch, text: domain });
         } catch {
-          links.push({ url: match[0] });
+          links.push({ url: urlMatch });
         }
       }
     }
@@ -2564,7 +2565,7 @@ export default function App() {
     const allMatches: Array<{ start: number; end: number; url: string; text: string; type: 'markdown' | 'plain' }> = [];
 
     // Find markdown links
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = markdownLinkRegex.exec(text)) !== null) {
       let linkText = match[1];
       const linkUrl = match[2].split(' ')[0].replace(/"/g, ''); // Clean URL
@@ -2591,23 +2592,25 @@ export default function App() {
 
     // Find plain URLs (not inside markdown)
     while ((match = plainUrlRegex.exec(text)) !== null) {
+      const matchIndex = match.index;
+      const matchUrl = match[0];
       // Check if this URL is inside a markdown link
       const isInsideMarkdown = allMatches.some(m =>
-        m.type === 'markdown' && match.index >= m.start && match.index < m.end
+        m.type === 'markdown' && matchIndex >= m.start && matchIndex < m.end
       );
       if (!isInsideMarkdown) {
         // Use task title for plain URLs, or fall back to domain
         let displayText = taskTitle;
         if (!displayText) {
           try {
-            displayText = new URL(match[0]).hostname.replace('www.', '');
-          } catch { displayText = match[0]; }
+            displayText = new URL(matchUrl).hostname.replace('www.', '');
+          } catch { displayText = matchUrl; }
         }
         allMatches.push({
-          start: match.index,
-          end: match.index + match[0].length,
+          start: matchIndex,
+          end: matchIndex + matchUrl.length,
           text: displayText,
-          url: match[0],
+          url: matchUrl,
           type: 'plain'
         });
       }
@@ -3565,7 +3568,7 @@ export default function App() {
                     {workspaceBoards.map(board => {
                       const goal = goals.find(g => g.id === board.goalId);
                       const tasks = goal?.tasks || [];
-                      const completedTasks = tasks.filter(t => t.completed).length;
+                      const completedTasks = tasks.filter(t => t.checked).length;
                       const progress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
                       return (
@@ -3608,18 +3611,18 @@ export default function App() {
                                 {tasks.slice(0, 3).map((task, idx) => (
                                   <div key={idx} className="flex items-center gap-2 text-xs">
                                     <div className={`w-3 h-3 rounded-sm border flex-shrink-0 flex items-center justify-center
-                                                  ${task.completed
+                                                  ${task.checked
                                                     ? 'bg-green-500/20 border-green-500/50'
                                                     : 'border-[#3d444d]'}`}
                                     >
-                                      {task.completed && (
+                                      {task.checked && (
                                         <svg className="w-2 h-2 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                         </svg>
                                       )}
                                     </div>
-                                    <span className={`truncate ${task.completed ? 'text-[#9fadbc] line-through' : 'text-[#b6c2cf]'}`}>
-                                      {task.task}
+                                    <span className={`truncate ${task.checked ? 'text-[#9fadbc] line-through' : 'text-[#b6c2cf]'}`}>
+                                      {task.text}
                                     </span>
                                   </div>
                                 ))}
@@ -5394,453 +5397,17 @@ export default function App() {
 
       {/* Task Detail Modal */}
       {selectedTask && (
-        <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-16 px-4"
-          onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
-        >
-          <div
-            className="bg-[#1a1f26] rounded-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="sticky top-0 bg-[#1a1f26] px-6 py-4 border-b border-[#3d444d]">
-              {/* Top row: checkbox, title, actions */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 flex-1">
-                  <button
-                    onClick={() => handleToggleTask(selectedTask.id)}
-                    className={`mt-1 w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0
-                              transition-all ${selectedTask.checked
-                                ? 'bg-accent border-accent'
-                                : 'border-[#5a6370] hover:border-accent'
-                              }`}
-                  >
-                    {selectedTask.checked && (
-                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    {editingTaskId === selectedTask.id ? (
-                      <input
-                        type="text"
-                        defaultValue={selectedTask.text}
-                        autoFocus
-                        className="w-full bg-[#22272b] border border-[#5a6370] rounded px-3 py-2 text-white text-lg font-semibold
-                                 focus:outline-none focus:border-accent"
-                        onBlur={(e) => {
-                          handleEditTask(selectedTask.id, { text: e.target.value });
-                          setEditingTaskId(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleEditTask(selectedTask.id, { text: e.currentTarget.value });
-                            setEditingTaskId(null);
-                          }
-                          if (e.key === 'Escape') setEditingTaskId(null);
-                        }}
-                      />
-                    ) : (
-                      <h2
-                        onClick={() => setEditingTaskId(selectedTask.id)}
-                        className={`text-lg font-semibold text-white cursor-pointer hover:bg-[#22272b] rounded px-1 -mx-1
-                                  ${selectedTask.checked ? 'line-through opacity-60' : ''}`}
-                      >
-                        {selectedTask.text}
-                      </h2>
-                    )}
-                    {/* List name with icon */}
-                    <div className="flex items-center gap-2 mt-1">
-                      <svg className="w-4 h-4 text-[#6b7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                      </svg>
-                      <span className="text-[#9fadbc] text-sm">{formatCategoryName(selectedTask.category || '')}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                  onClick={() => setEditingTaskId(selectedTask.id)}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                  title="Edit"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleDeleteTask(selectedTask.id)}
-                  className="p-2 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                  title="Delete"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              </div>
-
-              {/* Info Bar: Labels, Due Date, Progress */}
-              {(selectedTask.labels?.length || selectedTask.dueDate || selectedTask.checklistTotal) && (
-                <div className="px-6 py-3 bg-[#22272b]/50 border-b border-[#3d444d] flex flex-wrap items-center gap-3">
-                  {/* Labels */}
-                  {selectedTask.labels && selectedTask.labels.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      {selectedTask.labels.map((label, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded text-xs font-medium"
-                          style={{
-                            backgroundColor: label.color ? `var(--trello-${label.color}, #5a6370)` : '#5a6370',
-                            color: ['yellow', 'lime', 'sky'].includes(label.color || '') ? '#1a1f26' : 'white'
-                          }}
-                        >
-                          {label.name || label.color}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Due Date */}
-                  {selectedTask.dueDate && (
-                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium
-                      ${new Date(selectedTask.dueDate) < new Date() && !selectedTask.checked
-                        ? 'bg-red-500/20 text-red-400'
-                        : selectedTask.checked
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-[#3d444d] text-[#9fadbc]'
-                      }`}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      {new Date(selectedTask.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </div>
-                  )}
-
-                  {/* Checklist Progress */}
-                  {selectedTask.checklistTotal && selectedTask.checklistTotal > 0 && (
-                    <div className="flex items-center gap-2 px-2 py-1 rounded bg-[#3d444d] text-xs">
-                      <svg className="w-3.5 h-3.5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                      </svg>
-                      <div className="w-16 h-1.5 bg-[#1a1f26] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-accent rounded-full transition-all"
-                          style={{ width: `${((selectedTask.checklistChecked || 0) / selectedTask.checklistTotal) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-[#9fadbc]">
-                        {selectedTask.checklistChecked || 0}/{selectedTask.checklistTotal}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 max-h-[70vh] overflow-y-auto">
-              {/* Description */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-                    </svg>
-                    <h3 className="text-[#b6c2cf] font-semibold">Description</h3>
-                  </div>
-                  {selectedTask.description && (
-                    <button
-                      onClick={() => setEditingDescription(!editingDescription)}
-                      className="text-xs text-[#9fadbc] hover:text-accent px-2 py-1 rounded hover:bg-[#3d444d] transition-all"
-                    >
-                      {editingDescription ? 'Done' : 'Edit'}
-                    </button>
-                  )}
-                </div>
-                {editingDescription || !selectedTask.description ? (
-                  <textarea
-                    className="w-full bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[100px]
-                             border border-transparent focus:border-[#5a6370] focus:outline-none resize-none"
-                    placeholder="Add a more detailed description..."
-                    defaultValue={selectedTask.description || ''}
-                    onBlur={(e) => {
-                      handleEditTask(selectedTask.id, { description: e.target.value });
-                      if (e.target.value) setEditingDescription(false);
-                    }}
-                    autoFocus={editingDescription}
-                  />
-                ) : (
-                  <div
-                    className="bg-[#22272b] rounded-lg p-4 text-[#9fadbc] text-sm min-h-[60px] whitespace-pre-wrap cursor-pointer hover:bg-[#282e33] transition-all"
-                    onClick={() => setEditingDescription(true)}
-                  >
-                    {renderDescriptionWithLinks(selectedTask.description, selectedTask.text)}
-                  </div>
-                )}
-              </div>
-
-              {/* Checklists / Seasons */}
-              {selectedTask.checklists && selectedTask.checklists.length > 0 && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                    <h3 className="text-[#b6c2cf] font-semibold">
-                      {selectedTask.checklists.length === 1 ? selectedTask.checklists[0].name : 'Checklists'}
-                    </h3>
-                  </div>
-                  <div className="space-y-4">
-                    {selectedTask.checklists.map((checklist) => {
-                      const checkedCount = checklist.items.filter(i => i.checked).length;
-                      const totalCount = checklist.items.length;
-                      const progress = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
-
-                      return (
-                        <div key={checklist.id} className="bg-[#22272b] rounded-lg p-4">
-                          {selectedTask.checklists!.length > 1 && (
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-[#b6c2cf] font-medium text-sm">{checklist.name}</span>
-                              <span className="text-[#9fadbc] text-xs">{checkedCount}/{totalCount}</span>
-                            </div>
-                          )}
-                          {selectedTask.checklists!.length === 1 && (
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-[#9fadbc] text-xs">{checkedCount}/{totalCount} completed</span>
-                              <span className="text-[#9fadbc] text-xs">{Math.round(progress)}%</span>
-                            </div>
-                          )}
-                          {/* Progress bar */}
-                          <div className="w-full h-1.5 bg-[#3d444d] rounded-full mb-3 overflow-hidden">
-                            <div
-                              className="h-full bg-accent rounded-full transition-all duration-300"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          {/* Checklist items */}
-                          <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                            {checklist.items.map((item) => (
-                              <div
-                                key={item.id}
-                                onClick={() => handleToggleChecklistItem(selectedTask.id, checklist.id, item.id)}
-                                className="flex items-start gap-3 py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all cursor-pointer"
-                              >
-                                <div className={`w-4 h-4 mt-0.5 rounded border flex-shrink-0 flex items-center justify-center
-                                  ${item.checked
-                                    ? 'bg-accent border-accent'
-                                    : 'border-[#5a6370]'
-                                  }`}
-                                >
-                                  {item.checked && (
-                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </div>
-                                <span className={`text-sm ${item.checked ? 'text-[#6b7280] line-through' : 'text-[#9fadbc]'}`}>
-                                  {item.text}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                          {/* Add item */}
-                          {addingChecklistItem === checklist.id ? (
-                            <div className="mt-3 flex gap-2">
-                              <input
-                                type="text"
-                                value={newChecklistItemText}
-                                onChange={(e) => setNewChecklistItemText(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleAddChecklistItem(selectedTask.id, checklist.id, newChecklistItemText);
-                                  } else if (e.key === 'Escape') {
-                                    setAddingChecklistItem(null);
-                                    setNewChecklistItemText('');
-                                  }
-                                }}
-                                placeholder="Add an item..."
-                                className="flex-1 bg-[#3d444d] rounded px-3 py-1.5 text-sm text-white placeholder-[#9fadbc]
-                                         border border-transparent focus:border-accent focus:outline-none"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleAddChecklistItem(selectedTask.id, checklist.id, newChecklistItemText)}
-                                className="px-3 py-1.5 bg-accent hover:bg-accent-light text-white text-sm rounded"
-                              >
-                                Add
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setAddingChecklistItem(null);
-                                  setNewChecklistItemText('');
-                                }}
-                                className="px-3 py-1.5 bg-[#3d444d] hover:bg-[#4d545d] text-white text-sm rounded"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setAddingChecklistItem(checklist.id)}
-                              className="mt-3 flex items-center gap-2 text-[#9fadbc] hover:text-white text-sm py-1.5 px-2 rounded hover:bg-[#3d444d]/50 transition-all"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                              Add an item
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Extracted Links */}
-              {selectedTask.links && selectedTask.links.length > 0 && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                    </svg>
-                    <h3 className="text-[#b6c2cf] font-semibold">Links ({selectedTask.links.length})</h3>
-                  </div>
-                  <div className="space-y-2">
-                    {selectedTask.links.map((link, index) => {
-                      // Determine display text: prefer attachment name, then card title, then domain
-                      let displayText = link.text;
-                      if (!displayText || displayText.match(/^https?:\/\//)) {
-                        // If text is missing or is a URL, use card title or domain
-                        displayText = link.cardTitle || (() => {
-                          try { return new URL(link.url).hostname.replace('www.', ''); }
-                          catch { return link.url; }
-                        })();
-                      }
-
-                      // Source label with checklist context
-                      const sourceLabel = link.source === 'checklist' && link.checklistName
-                        ? `${link.checklistName}`
-                        : link.source;
-
-                      return (
-                        <a
-                          key={index}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-3 transition-all group"
-                        >
-                          <div className="w-8 h-8 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[#b6c2cf] text-sm font-medium group-hover:text-accent transition-all truncate">
-                              {displayText}
-                            </p>
-                            <p className="text-[#6b7280] text-xs truncate">
-                              {(() => {
-                                try { return new URL(link.url).hostname.replace('www.', ''); }
-                                catch { return link.url; }
-                              })()}
-                            </p>
-                          </div>
-                          <span className="text-[#6b7280] text-xs px-2 py-0.5 bg-[#3d444d] rounded max-w-[100px] truncate">
-                            {sourceLabel}
-                          </span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Resource Link (manual) */}
-              {!selectedTask.links?.length && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                    </svg>
-                    <h3 className="text-[#b6c2cf] font-semibold">Resource Link</h3>
-                  </div>
-                  {selectedTask.link ? (
-                    <a
-                      href={selectedTask.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 bg-[#22272b] hover:bg-[#282e33] rounded-lg p-4 transition-all group"
-                    >
-                      <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center">
-                        <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[#b6c2cf] font-medium group-hover:text-accent transition-all">
-                          {selectedTask.linkText || 'Open Resource'}
-                        </p>
-                        <p className="text-[#9fadbc] text-sm truncate">{selectedTask.link}</p>
-                      </div>
-                    </a>
-                  ) : (
-                    <input
-                      type="url"
-                      className="w-full bg-[#22272b] rounded-lg px-4 py-3 text-[#9fadbc] text-sm
-                               border border-transparent focus:border-[#5a6370] focus:outline-none"
-                      placeholder="Add a link (https://...)"
-                      onBlur={(e) => e.target.value && handleEditTask(selectedTask.id, { link: e.target.value })}
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Smart Insights - Powered by Content Engine */}
-              <SmartInsights
-                title={selectedTask.text}
-                description={selectedTask.description}
-                listContext={selectedTask.category}
-                urls={selectedTask.links?.map(l => l.url)}
-              />
-
-              {/* Activity */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <h3 className="text-[#b6c2cf] font-semibold">Activity</h3>
-                </div>
-                <div className="text-[#9fadbc] text-sm">
-                  {selectedTask.checked ? (
-                    <p className="flex items-center gap-2">
-                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                      Task completed
-                    </p>
-                  ) : (
-                    <p className="flex items-center gap-2">
-                      <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                      Task pending
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TaskDetailModal
+          task={selectedTask}
+          onClose={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
+          onToggleTask={handleToggleTask}
+          onEditTask={handleEditTask}
+          onDeleteTask={handleDeleteTask}
+          onToggleChecklistItem={handleToggleChecklistItem}
+          onAddChecklistItem={handleAddChecklistItem}
+          formatCategoryName={formatCategoryName}
+          renderDescriptionWithLinks={renderDescriptionWithLinks}
+        />
       )}
     </div>
   );

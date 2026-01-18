@@ -5,7 +5,7 @@ import { GameData, ContentRating, RelatedContent } from '../types';
 
 // RAWG API key - Free tier
 // Get your own key at https://rawg.io/apidocs
-const RAWG_API_KEY = import.meta.env.VITE_RAWG_API_KEY || '';
+const RAWG_API_KEY = import.meta.env.VITE_RAWG_API_KEY || '79d7e5c36a38432b9b9fd84c3ccead4a';
 const RAWG_BASE_URL = 'https://api.rawg.io/api';
 
 interface RAWGGame {

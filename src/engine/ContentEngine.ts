@@ -77,6 +77,8 @@ export async function enrich(
     const { type, metadata } = detection;
     const title = metadata.title || text;
 
+    console.log('Content Engine enriching:', { type, title, metadata });
+
     // Check cache first
     const cacheKey = getCacheKey(title, type);
     const cached = getFromCache(cacheKey);

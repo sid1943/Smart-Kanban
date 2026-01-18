@@ -6,7 +6,7 @@ import { ContentRating } from '../types';
 
 // OMDb API key - Free tier (1000 requests/day)
 // Get your own key at https://www.omdbapi.com/apikey.aspx
-const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY || '';
+const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY || '550267c4';
 const OMDB_BASE_URL = 'https://www.omdbapi.com/';
 
 interface OMDbResponse {

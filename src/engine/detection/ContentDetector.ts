@@ -16,8 +16,8 @@ const PATTERNS = {
   singleYear: /\b(19|20)\d{2}\b/,
 
   // TV Series signals
-  tvKeywords: /\b(season|seasons|episode|episodes|series|tv\s*show|miniseries|s\d{1,2}e\d{1,2})\b/i,
-  tvContext: /\b(to[_\s]?watch|watching|watched|binge|netflix|hbo|streaming)\b/i,
+  tvKeywords: /\b(season|seasons|episode|episodes|series|tv\s*show|miniseries|mini[_\s]?series|limited[_\s]?series|s\d{1,2}e\d{1,2})\b/i,
+  tvContext: /\b(to[_\s]?watch|watching|watched|binge|netflix|hbo|streaming|tv|shows?)\b/i,
 
   // Movie signals
   movieKeywords: /\b(movie|film|cinema|theatrical|director'?s\s*cut|extended\s*edition)\b/i,
@@ -55,7 +55,12 @@ const LIST_CONTEXT: Record<string, ContentType[]> = {
   'movies': ['movie'],
   'films': ['movie'],
   'tv': ['tv_series'],
+  'tv_series': ['tv_series'],
+  'tv_shows': ['tv_series'],
   'shows': ['tv_series'],
+  'series': ['tv_series'],
+  'limited_series': ['tv_series'],
+  'miniseries': ['tv_series'],
   'anime': ['anime'],
   'books': ['book'],
   'reading': ['book'],
@@ -221,13 +226,15 @@ export function detectContent(
 
   // Extract clean title (remove year, keywords, etc.)
   let title = text
+    .replace(/\s*\(\s*(19|20)\d{2}\s*[-–—]?\s*((19|20)?\d{2,4}|present)?\s*\)/gi, '') // Remove (2008) or (2008-2013)
     .replace(PATTERNS.yearRange, '')
-    .replace(PATTERNS.singleYear, '')
+    .replace(/\s*[-–—]\s*(19|20)\d{2}\s*$/g, '') // Remove trailing " - 2008"
     .replace(/\s*[-–—]\s*$/, '')
     .replace(/^\s*[-–—]\s*/, '')
     .trim();
 
   metadata.title = title || text;
+  console.log('Content Detector - original:', text, 'cleaned:', title);
 
   return {
     type: bestType,

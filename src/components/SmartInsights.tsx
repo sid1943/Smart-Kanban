@@ -20,6 +20,7 @@ interface SmartInsightsProps {
   description?: string;
   listContext?: string;
   urls?: string[];
+  checklistNames?: string[];
 }
 
 export const SmartInsights: React.FC<SmartInsightsProps> = ({
@@ -27,6 +28,7 @@ export const SmartInsights: React.FC<SmartInsightsProps> = ({
   description,
   listContext,
   urls,
+  checklistNames,
 }) => {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
   const [enrichedData, setEnrichedData] = useState<EnrichedData>(null);
@@ -36,10 +38,12 @@ export const SmartInsights: React.FC<SmartInsightsProps> = ({
 
   // Detect content type on mount
   useEffect(() => {
-    const allText = `${title} ${description || ''}`;
+    // Include checklist names in detection text (seasons, episodes, etc.)
+    const checklistText = checklistNames?.join(' ') || '';
+    const allText = `${title} ${description || ''} ${listContext || ''} ${checklistText}`;
     const result = detect(allText, listContext, urls);
     setDetection(result);
-  }, [title, description, listContext, urls]);
+  }, [title, description, listContext, urls, checklistNames]);
 
   // Fetch enriched data when expanded
   const handleEnrich = async () => {
@@ -91,7 +95,7 @@ export const SmartInsights: React.FC<SmartInsightsProps> = ({
               </span>
             </div>
             <div className="text-xs text-[#9fadbc]">
-              {detection.confidence}% confident • Click to {expanded ? 'collapse' : 'expand'}
+              Click to {expanded ? 'collapse' : 'expand'}
             </div>
           </div>
         </div>

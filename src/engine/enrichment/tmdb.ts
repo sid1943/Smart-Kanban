@@ -5,9 +5,12 @@ import { EntertainmentData, ContentRating, StreamingAvailability, RelatedContent
 
 // TMDb API key - Free tier (limited to 40 requests/10 seconds)
 // Users should get their own key at https://www.themoviedb.org/settings/api
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '4733992aa020cb5c1666838f6ae0a19c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
+
+// Debug: log if API key is loaded
+console.log('TMDb API Key loaded:', TMDB_API_KEY ? 'Yes' : 'No');
 
 interface TMDbSearchResult {
   id: number;
@@ -77,10 +80,19 @@ export async function searchTMDb(
       params.append(type === 'movie' ? 'year' : 'first_air_date_year', year);
     }
 
-    const response = await fetch(`${TMDB_BASE_URL}/search/${type}?${params}`);
-    if (!response.ok) return null;
+    const url = `${TMDB_BASE_URL}/search/${type}?${params}`;
+    console.log('TMDb search:', query, type, url);
+
+    const response = await fetch(url);
+    console.log('TMDb response status:', response.status);
+
+    if (!response.ok) {
+      console.error('TMDb response not ok:', response.status, response.statusText);
+      return null;
+    }
 
     const data = await response.json();
+    console.log('TMDb results:', data.results?.length || 0, 'found');
     return data.results?.[0] || null;
   } catch (error) {
     console.error('TMDb search error:', error);

@@ -264,6 +264,11 @@ function EmptyState({ category }: { category: CategoryType | null }) {
       title: 'Smart Reminders',
       description: 'Set up reminders that adapt to your schedule and help you stay on track.',
     },
+    ideas: {
+      emoji: '💡',
+      title: 'Ideas & Brainstorming',
+      description: 'Capture your ideas and let me help you develop them into actionable plans.',
+    },
   };
 
   const state = emptyStates[category];
