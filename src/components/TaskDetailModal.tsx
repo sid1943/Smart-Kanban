@@ -70,6 +70,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [editingDescription, setEditingDescription] = useState(false);
   const [addingChecklistItem, setAddingChecklistItem] = useState<string | null>(null);
   const [newChecklistItemText, setNewChecklistItemText] = useState('');
+  const [linksExpanded, setLinksExpanded] = useState(false);
 
   // Fetch enriched data
   const { detection, data: enrichedData, loading: enrichLoading } = useContentEnrichment({
@@ -339,6 +340,43 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
           )}
 
+          {/* Your Progress vs Series Status */}
+          {isEntertainment && task.checklistTotal && task.checklistTotal > 0 && (
+            <div className="mb-4 p-3 bg-[#22272b] rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[#6b7280] text-xs uppercase tracking-wide">Your Progress</span>
+                {task.checklistChecked === task.checklistTotal ? (
+                  <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full">Completed</span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full">Watching</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 bg-[#3d444d] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      task.checklistChecked === task.checklistTotal ? 'bg-green-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${((task.checklistChecked || 0) / task.checklistTotal) * 100}%` }}
+                  />
+                </div>
+                <span className="text-white text-sm font-medium">
+                  {task.checklistChecked || 0}/{task.checklistTotal}
+                </span>
+              </div>
+              {(enrichedData as EntertainmentData).seasons && task.checklistTotal && (
+                <div className="mt-2 text-xs text-[#9fadbc]">
+                  {task.checklistChecked === task.checklistTotal
+                    ? `You've watched all ${task.checklistTotal} seasons!`
+                    : task.checklistChecked === 0
+                      ? `${task.checklistTotal} seasons to watch`
+                      : `${task.checklistTotal - (task.checklistChecked || 0)} seasons remaining`
+                  }
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Book Info */}
           {isBook && (
             <div className="mb-4 flex flex-wrap gap-3 text-sm">
@@ -554,43 +592,56 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
           )}
 
-          {/* Extracted Links */}
+          {/* Extracted Links - Collapsible */}
           {task.links && task.links.length > 0 && (
             <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
+              <button
+                onClick={() => setLinksExpanded(!linksExpanded)}
+                className="flex items-center gap-2 w-full text-left hover:bg-[#22272b] rounded p-1 -ml-1 transition-all"
+              >
+                <svg
+                  className={`w-4 h-4 text-[#9fadbc] transition-transform ${linksExpanded ? 'rotate-90' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
                 <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
                 <h3 className="text-[#b6c2cf] font-semibold">Links ({task.links.length})</h3>
-              </div>
-              <div className="space-y-2">
-                {task.links.map((link, idx) => (
-                  <a
-                    key={idx}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between p-3 bg-[#22272b] rounded-lg hover:bg-[#282e33] transition-all group"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 bg-[#3d444d] rounded flex items-center justify-center flex-shrink-0">
-                        <svg className="w-4 h-4 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
+              </button>
+              {linksExpanded && (
+                <div className="space-y-2 mt-3 ml-6">
+                  {task.links.map((link, idx) => (
+                    <a
+                      key={idx}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-3 bg-[#22272b] rounded-lg hover:bg-[#282e33] transition-all group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 bg-[#3d444d] rounded flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-white text-sm truncate">
+                            {link.text || link.cardTitle || new URL(link.url).hostname}
+                          </p>
+                          <p className="text-[#6b7280] text-xs truncate">{new URL(link.url).hostname}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm truncate">
-                          {link.text || link.cardTitle || new URL(link.url).hostname}
-                        </p>
-                        <p className="text-[#6b7280] text-xs truncate">{new URL(link.url).hostname}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs px-2 py-1 bg-[#3d444d] text-[#9fadbc] rounded capitalize">
-                      {link.checklistName || link.source}
-                    </span>
-                  </a>
-                ))}
-              </div>
+                      <span className="text-xs px-2 py-1 bg-[#3d444d] text-[#9fadbc] rounded capitalize">
+                        {link.checklistName || link.source}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
