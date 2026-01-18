@@ -130,32 +130,59 @@ The `renderDescriptionWithLinks` function and link display logic were using raw 
 
 ---
 
-## Common TypeScript Errors (Pre-existing)
+## [2026-01-18] Smart Insights Not Loading (No Data Found)
 
-These errors exist in the codebase but don't prevent the app from running:
+### Error
+Smart Content Engine detected content type correctly (TV Series badge shown) but enrichment data (ratings, streaming, etc.) was not displayed. Console showed "No data found".
 
-### TS7034/TS7005: Implicit 'any' type
-```
-Variable 'match' implicitly has type 'any'
-```
-**Location:** Lines 2526, 2535, 2566, 2595
-**Status:** Non-blocking (app runs with Vite)
+### Cause
+The `useContentEnrichment` hook was passing the raw card title including year range (e.g., "Jessica Jones (2015-2019)") to the `enrich()` function. TMDb API search failed because it was searching for the title with parentheses and years in the name.
 
-### TS2345: Type not assignable
-```
-Argument of type '"goal"' is not assignable to parameter of type 'SetStateAction<ViewMode>'
-```
-**Location:** Lines 3462, 3575, 3636
-**Status:** ViewMode type needs to include 'goal' value
+The detection system correctly parsed the title and stored a cleaned version in `result.metadata.title`, but the hook wasn't using it.
 
-### TS2339: Property does not exist
+**Before:**
+```typescript
+enrich(title, result.type, listContext, urls)
+// title = "Jessica Jones (2015-2019)" - TMDb can't find this
 ```
-Property 'completed' does not exist on type 'TaskItem'
-Property 'task' does not exist on type 'TaskItem'
+
+### Resolution
+Updated the hook to use the cleaned title from the detection metadata:
+
+```typescript
+const cleanedTitle = result.metadata?.title || title;
+enrich(cleanedTitle, result.type, listContext, urls)
+// cleanedTitle = "Jessica Jones" - TMDb finds this correctly
 ```
-**Location:** Lines 3567, 3610, 3614, 3620, 3621
-**Status:** TaskItem interface needs updating or code needs refactoring
+
+### Files Modified
+- `src/hooks/useContentEnrichment.ts`
+
+### Prevention
+When passing data between detection and enrichment phases, always use cleaned/normalized values from detection metadata, not raw user input.
 
 ---
 
-*Last updated: 2026-01-17*
+## [2026-01-18] TypeScript Errors Fixed
+
+The following pre-existing TypeScript errors were fixed:
+
+### TS7034/TS7005: Implicit 'any' type
+**Fix:** Added explicit type annotation `let match: RegExpExecArray | null;` and captured match values into local variables inside loops.
+
+### TS2345: Type '"goal"' not assignable to ViewMode
+**Fix:** Added `'goal'` to the ViewMode type union.
+
+### TS2339: Property 'completed'/'task' does not exist on TaskItem
+**Fix:** Changed `task.completed` to `task.checked` and `task.task` to `task.text` to match the TaskItem interface.
+
+### TS7053: CategoryType can't index emptyStates
+**Fix:** Added `ideas` entry to the emptyStates object in ChatInterface.tsx.
+
+### Files Modified
+- `src/App.tsx` - Type fixes for match variables, ViewMode, TaskItem properties
+- `src/components/ChatInterface.tsx` - Added 'ideas' to emptyStates
+
+---
+
+*Last updated: 2026-01-18*

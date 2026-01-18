@@ -41,7 +41,11 @@ export function useContentEnrichment({
       setLoading(true);
       setError(null);
 
-      enrich(title, result.type, listContext, urls)
+      // Use the cleaned title from detection (strips years, etc.)
+      const cleanedTitle = result.metadata?.title || title;
+      console.log('Enriching:', cleanedTitle, 'type:', result.type, 'year:', result.metadata?.year || result.metadata?.yearRange);
+
+      enrich(cleanedTitle, result.type, listContext, urls)
         .then((enrichResult) => {
           if (enrichResult.success && enrichResult.data) {
             setData(enrichResult.data);
