@@ -156,6 +156,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       {getContentTypeName(detection.type)}
                     </span>
                   )}
+                  {enrichLoading && !enrichedData && (
+                    <span className="text-xs text-[#6b7280] flex items-center gap-1">
+                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -209,15 +217,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   <span className="text-[#6b7280] text-xs">{rating.source}</span>
                 </a>
               ))}
-              {enrichLoading && (
-                <span className="text-[#6b7280] text-xs flex items-center gap-1">
-                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Loading...
-                </span>
-              )}
             </div>
           )}
 

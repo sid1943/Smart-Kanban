@@ -41,11 +41,18 @@ export function useContentEnrichment({
       setLoading(true);
       setError(null);
 
-      // Use the cleaned title from detection (strips years, etc.)
-      const cleanedTitle = result.metadata?.title || title;
-      console.log('Enriching:', cleanedTitle, 'type:', result.type, 'year:', result.metadata?.year || result.metadata?.yearRange);
+      // Clean the card title directly - remove year patterns like (2015-2019) or (2015)
+      const cleanedTitle = title
+        .replace(/\s*\(\s*(19|20)\d{2}\s*[-–—]?\s*((19|20)?\d{2,4}|present)?\s*\)/gi, '')
+        .replace(/\s*[-–—]\s*(19|20)\d{2}.*$/g, '')
+        .trim();
 
-      enrich(cleanedTitle, result.type, listContext, urls)
+      // Extract year from title for better search accuracy
+      const yearMatch = title.match(/\(?(19|20)\d{2}/);
+      const year = yearMatch ? yearMatch[0].replace('(', '') : undefined;
+
+      // Pass year to help find the correct version (e.g., Twilight Zone 1959 vs 2002)
+      enrich(cleanedTitle, result.type, listContext, urls, year)
         .then((enrichResult) => {
           if (enrichResult.success && enrichResult.data) {
             setData(enrichResult.data);

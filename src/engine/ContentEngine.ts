@@ -66,18 +66,20 @@ export async function enrich(
   text: string,
   detectedType?: ContentType,
   listContext?: string,
-  urls?: string[]
+  urls?: string[],
+  year?: string
 ): Promise<EnrichmentResult> {
   try {
     // Detect content type if not provided
     const detection = detectedType
-      ? { type: detectedType, metadata: { title: text } } as DetectionResult
+      ? { type: detectedType, metadata: { title: text, year } } as DetectionResult
       : detect(text, listContext, urls);
 
     const { type, metadata } = detection;
     const title = metadata.title || text;
+    const searchYear = year || metadata.year || metadata.yearRange?.split(/[-–—]/)[0];
 
-    console.log('Content Engine enriching:', { type, title, metadata });
+    console.log('Content Engine enriching:', { type, title, year: searchYear });
 
     // Check cache first
     const cacheKey = getCacheKey(title, type);
@@ -96,11 +98,11 @@ export async function enrich(
     // Enrich based on content type
     switch (type) {
       case 'tv_series':
-        data = await enrichTVSeries(title, metadata.yearRange || metadata.year);
+        data = await enrichTVSeries(title, searchYear);
         break;
 
       case 'movie':
-        data = await enrichMovie(title, metadata.year);
+        data = await enrichMovie(title, searchYear);
         break;
 
       case 'anime':

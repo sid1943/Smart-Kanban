@@ -135,31 +135,43 @@ The `renderDescriptionWithLinks` function and link display logic were using raw 
 ### Error
 Smart Content Engine detected content type correctly (TV Series badge shown) but enrichment data (ratings, streaming, etc.) was not displayed. Console showed "No data found".
 
-### Cause
-The `useContentEnrichment` hook was passing the raw card title including year range (e.g., "Jessica Jones (2015-2019)") to the `enrich()` function. TMDb API search failed because it was searching for the title with parentheses and years in the name.
+### Cause (Issue 1)
+The `useContentEnrichment` hook was passing ALL text (title + description + URLs + list context) to the detection, and then using `result.metadata.title` for the API search. This meant the search query included the entire card description.
 
-The detection system correctly parsed the title and stored a cleaned version in `result.metadata.title`, but the hook wasn't using it.
-
-**Before:**
-```typescript
-enrich(title, result.type, listContext, urls)
-// title = "Jessica Jones (2015-2019)" - TMDb can't find this
+**Console showed:**
+```
+TMDb search: Jessica Jones Following the tragic end of her brief superhero career...
 ```
 
+### Cause (Issue 2)
+After fixing issue 1, the title cleaning happened in the hook, but the year wasn't being passed to TMDb. This caused wrong results for shows with multiple versions (e.g., "The Twilight Zone" 1959 vs 2002 reboot).
+
 ### Resolution
-Updated the hook to use the cleaned title from the detection metadata:
+1. Clean the title directly in the hook using regex (not relying on detection metadata)
+2. Extract year from the original title and pass it to the enrich function
+3. Pass year to TMDb API for accurate results
 
 ```typescript
-const cleanedTitle = result.metadata?.title || title;
-enrich(cleanedTitle, result.type, listContext, urls)
-// cleanedTitle = "Jessica Jones" - TMDb finds this correctly
+// Clean title - remove year patterns
+const cleanedTitle = title
+  .replace(/\s*\(\s*(19|20)\d{2}\s*[-–—]?\s*((19|20)?\d{2,4}|present)?\s*\)/gi, '')
+  .trim();
+
+// Extract year for API accuracy
+const yearMatch = title.match(/\(?(19|20)\d{2}/);
+const year = yearMatch ? yearMatch[0].replace('(', '') : undefined;
+
+enrich(cleanedTitle, result.type, listContext, urls, year)
 ```
 
 ### Files Modified
-- `src/hooks/useContentEnrichment.ts`
+- `src/hooks/useContentEnrichment.ts` - Clean title and extract year
+- `src/engine/ContentEngine.ts` - Accept and use year parameter
 
 ### Prevention
-When passing data between detection and enrichment phases, always use cleaned/normalized values from detection metadata, not raw user input.
+- Always clean user input before API calls
+- Pass contextual data (year, author, etc.) to improve search accuracy
+- Test with shows/movies that have multiple versions (remakes, reboots)
 
 ---
 
