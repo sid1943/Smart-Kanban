@@ -1,7 +1,8 @@
 // Task Detail Modal with integrated Smart Insights
 import React, { useState } from 'react';
 import { useContentEnrichment } from '../hooks/useContentEnrichment';
-import { getContentTypeIcon, getContentTypeName, EntertainmentData, BookData, GameData } from '../engine';
+import { getContentTypeIcon, getContentTypeName, EntertainmentData, BookData, GameData, ContentType } from '../engine';
+import ContentTypePicker from './ContentTypePicker';
 
 interface TaskLabel {
   name: string;
@@ -41,6 +42,10 @@ interface TaskItem {
   checklistTotal?: number;
   checklistChecked?: number;
   links?: ExtractedLink[];
+  // Smart Content Engine fields
+  contentType?: ContentType;
+  contentTypeConfidence?: number;
+  contentTypeManual?: boolean;
 }
 
 interface TaskDetailModalProps {
@@ -71,15 +76,28 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [addingChecklistItem, setAddingChecklistItem] = useState<string | null>(null);
   const [newChecklistItemText, setNewChecklistItemText] = useState('');
   const [linksExpanded, setLinksExpanded] = useState(false);
+  const [showTypePicker, setShowTypePicker] = useState(false);
 
-  // Fetch enriched data
-  const { detection, data: enrichedData, loading: enrichLoading } = useContentEnrichment({
+  // Fetch enriched data - pass stored content type if available
+  const { detection, data: enrichedData, loading: enrichLoading, needsUserInput, suggestedTypes } = useContentEnrichment({
     title: task.text,
     description: task.description,
     listContext: task.category,
     urls: task.links?.map(l => l.url),
     checklistNames: task.checklists?.map(cl => cl.name),
+    storedContentType: task.contentType,
+    storedContentTypeManual: task.contentTypeManual,
   });
+
+  // Handle content type selection
+  const handleContentTypeSelect = (type: ContentType) => {
+    onEditTask(task.id, {
+      contentType: type,
+      contentTypeManual: true,
+      contentTypeConfidence: 100,
+    });
+    setShowTypePicker(false);
+  };
 
   // Type guards for enriched data
   const isEntertainment = enrichedData && ['tv_series', 'movie', 'anime'].includes(enrichedData.type);
@@ -151,12 +169,25 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     </svg>
                     <span className="text-[#9fadbc] text-sm">{formatCategoryName(task.category || '')}</span>
                   </div>
-                  {detection && detection.type !== 'unknown' && (
-                    <span className="text-xs px-2 py-0.5 bg-[#3d444d] text-[#9fadbc] rounded-full flex items-center gap-1">
+                  {detection && detection.type !== 'unknown' ? (
+                    <button
+                      onClick={() => setShowTypePicker(!showTypePicker)}
+                      className="text-xs px-2 py-0.5 bg-[#3d444d] text-[#9fadbc] rounded-full flex items-center gap-1 hover:bg-[#4d545d] transition-all"
+                      title="Click to change content type"
+                    >
                       <span>{getContentTypeIcon(detection.type)}</span>
                       {getContentTypeName(detection.type)}
-                    </span>
-                  )}
+                      {task.contentTypeManual && <span className="text-[#6b7280]">*</span>}
+                    </button>
+                  ) : needsUserInput && !task.contentType ? (
+                    <button
+                      onClick={() => setShowTypePicker(true)}
+                      className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded-full flex items-center gap-1 hover:bg-amber-500/30 transition-all"
+                    >
+                      <span>?</span>
+                      Set type for insights
+                    </button>
+                  ) : null}
                   {enrichLoading && !enrichedData && (
                     <span className="text-xs text-[#6b7280] flex items-center gap-1">
                       <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -282,6 +313,37 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6">
+          {/* Content Type Picker - shown when user needs to categorize or wants to change */}
+          {showTypePicker && (
+            <div className="mb-4">
+              <ContentTypePicker
+                currentType={task.contentType || detection?.type}
+                suggestedTypes={suggestedTypes}
+                onSelect={handleContentTypeSelect}
+                onDismiss={() => setShowTypePicker(false)}
+              />
+            </div>
+          )}
+
+          {/* Prompt for uncategorized content */}
+          {needsUserInput && !task.contentType && !showTypePicker && (
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">?</span>
+                <div className="flex-1">
+                  <p className="text-amber-200 text-sm font-medium">What type of content is this?</p>
+                  <p className="text-amber-200/70 text-xs">Set the type to get ratings, streaming info & more</p>
+                </div>
+                <button
+                  onClick={() => setShowTypePicker(true)}
+                  className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-sm rounded transition-all"
+                >
+                  Set Type
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Streaming / Where to Watch */}
           {isEntertainment && (enrichedData as EntertainmentData).streaming && (enrichedData as EntertainmentData).streaming!.length > 0 && (
             <div className="mb-4 p-3 bg-[#22272b] rounded-lg">

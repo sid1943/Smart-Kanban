@@ -63,6 +63,9 @@ interface Comment {
   date: string;
 }
 
+// Content types for Smart Insights
+type ContentType = 'tv_series' | 'movie' | 'anime' | 'book' | 'game' | 'music' | 'unknown';
+
 interface TaskItem {
   id: string;
   text: string;
@@ -85,6 +88,10 @@ interface TaskItem {
   assignees?: string[];
   position?: number;
   links?: ExtractedLink[];
+  // Smart Content Engine fields
+  contentType?: ContentType;
+  contentTypeConfidence?: number;
+  contentTypeManual?: boolean; // true if user manually set it
 }
 
 // User's personal info for smart task suggestions

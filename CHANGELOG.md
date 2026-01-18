@@ -2,6 +2,30 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.3] - 2026-01-18
+
+### Added
+- **Manual Content Type Selection**: Users can now manually set content type for any card
+  - Click the content type badge to change it
+  - "Set type for insights" prompt appears for uncategorized content
+  - Type picker shows suggestions based on detected signals
+  - Manual selections are persisted and marked with *
+
+- **Smart Detection for Imports**: Content type is now stored with tasks
+  - `contentType`, `contentTypeConfidence`, `contentTypeManual` fields added
+  - Detection runs on import and stores results
+  - Low confidence items prompt user for categorization
+
+### Changed
+- Content type badge is now clickable (opens type picker)
+- Hook returns `needsUserInput` and `suggestedTypes` for UI prompts
+- Enrichment uses stored type when available (faster, more accurate)
+
+### Architecture
+- New `ContentTypePicker` component for type selection UI
+- Updated `useContentEnrichment` hook with stored type support
+- Added `detectContentType` export for import flow
+
 ## [0.3.2] - 2026-01-18
 
 ### Added
