@@ -6,6 +6,7 @@ export {
   enrich,
   getContentTypeIcon,
   getContentTypeName,
+  getOrchestrator,
 } from './ContentEngine';
 
 export type {
@@ -26,3 +27,24 @@ export {
   isEntertainment,
   isLeisure,
 } from './detection/ContentDetector';
+
+// Agent Architecture exports
+export {
+  BaseAgent,
+  AgentOrchestrator,
+  resetOrchestrator,
+  type DetectionContext,
+  type AgentDetectionResult,
+  type AgentConfig,
+  type OrchestratorConfig,
+  type OrchestratorDetectionResult,
+} from './agents';
+
+// Individual agents (for direct use or extension)
+export {
+  TVSeriesAgent,
+  MovieAgent,
+  AnimeAgent,
+  BookAgent,
+  GameAgent,
+} from './agents';

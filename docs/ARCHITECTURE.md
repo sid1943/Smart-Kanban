@@ -8,10 +8,11 @@ This document describes the architecture of Smart Kanban, focusing on the Smart 
 1. [Overview](#overview)
 2. [Core Data Structures](#core-data-structures)
 3. [Smart Content Engine](#smart-content-engine)
-4. [Component Architecture](#component-architecture)
-5. [Data Flow](#data-flow)
-6. [API Integrations](#api-integrations)
-7. [File Structure](#file-structure)
+4. [Agent Architecture](#agent-architecture)
+5. [Component Architecture](#component-architecture)
+6. [Data Flow](#data-flow)
+7. [API Integrations](#api-integrations)
+8. [File Structure](#file-structure)
 
 ---
 
@@ -75,30 +76,42 @@ type ContentType =
 
 ### Architecture Overview
 
+The Smart Content Engine uses a modular **Agent Architecture** where specialized agents handle detection and enrichment for each content type. The `AgentOrchestrator` coordinates all agents, running detection in parallel and routing enrichment to the appropriate agent.
+
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                          SMART CONTENT ENGINE                               │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     │
-│  │    DETECTION    │     │   ENRICHMENT    │     │    DISPLAY      │     │
-│  │                 │     │                 │     │                 │     │
-│  │ ContentDetector │────►│ ContentEngine   │────►│ TaskDetailModal │     │
-│  │                 │     │                 │     │ SmartInsights   │     │
-│  └─────────────────┘     └─────────────────┘     └─────────────────┘     │
-│          │                       │                                        │
-│          │                       │                                        │
-│          ▼                       ▼                                        │
-│  ┌─────────────────┐     ┌─────────────────┐                             │
-│  │ Pattern Matching│     │   API Clients   │                             │
-│  │ - Keywords      │     │ - TMDb          │                             │
-│  │ - URL patterns  │     │ - OMDb          │                             │
-│  │ - List context  │     │ - Jikan         │                             │
-│  │ - Year patterns │     │ - OpenLibrary   │                             │
-│  │ - Checklists    │     │ - RAWG          │                             │
-│  └─────────────────┘     └─────────────────┘                             │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            SMART CONTENT ENGINE                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────┐       │
+│  │    DETECTION    │     │  AGENT ORCHESTRATOR │     │    DISPLAY      │       │
+│  │                 │     │                     │     │                 │       │
+│  │ ContentDetector │────►│ Coordinates agents  │────►│ TaskDetailModal │       │
+│  │ (legacy/direct) │     │ Parallel detection  │     │ SmartInsights   │       │
+│  └─────────────────┘     │ Routes enrichment   │     └─────────────────┘       │
+│                          └──────────┬──────────┘                               │
+│                                     │                                           │
+│            ┌────────────────────────┼────────────────────────┐                 │
+│            │                        │                        │                 │
+│            ▼                        ▼                        ▼                 │
+│  ┌─────────────────────────────────────────────────────────────────────┐       │
+│  │                         CONTENT AGENTS                               │       │
+│  │                                                                      │       │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                   │       │
+│  │  │ TVSeries    │ │ Movie       │ │ Anime       │   ENTERTAINMENT   │       │
+│  │  │ Agent       │ │ Agent       │ │ Agent       │                   │       │
+│  │  │ TMDb + OMDb │ │ TMDb + OMDb │ │ Jikan       │                   │       │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘                   │       │
+│  │                                                                      │       │
+│  │  ┌─────────────┐ ┌─────────────┐                                   │       │
+│  │  │ Book        │ │ Game        │                      LEISURE      │       │
+│  │  │ Agent       │ │ Agent       │                                   │       │
+│  │  │ OpenLibrary │ │ RAWG        │                                   │       │
+│  │  └─────────────┘ └─────────────┘                                   │       │
+│  │                                                                      │       │
+│  └─────────────────────────────────────────────────────────────────────┘       │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Detection Phase
@@ -151,16 +164,177 @@ interface DetectionResult {
 
 **Confidence Threshold:** 40% (below this, prompt user for input)
 
+---
+
+## Agent Architecture
+
+### Overview
+
+The engine uses a plugin-like **Agent Architecture** where each content type is handled by a specialized agent. This provides:
+- **Modularity:** Each agent is self-contained with its own detection rules and API integrations
+- **Extensibility:** New content types can be added by creating new agents
+- **Parallel Processing:** All agents run detection simultaneously for faster results
+- **Encapsulation:** Each agent owns its patterns, keywords, and enrichment logic
+
+### BaseAgent Abstract Class
+
+All agents extend `BaseAgent` which provides common functionality:
+
+```typescript
+abstract class BaseAgent {
+  // Identity
+  abstract readonly type: ContentType;
+  abstract readonly name: string;
+  abstract readonly category: 'entertainment' | 'leisure';
+  abstract readonly apis: string[];
+
+  // Detection patterns (implemented by subclasses)
+  protected abstract keywords: RegExp[];
+  protected abstract contextKeywords: RegExp[];
+  protected abstract urlPatterns: { pattern: RegExp; weight: number }[];
+  protected abstract getListContextMappings(): [string, number][];
+
+  // Core methods
+  canHandle(context: DetectionContext): AgentDetectionResult;  // Detection
+  abstract enrich(title: string, year?: string): Promise<EnrichedData>; // Enrichment
+}
+```
+
+### Agent Registry
+
+| Agent | Type | Category | APIs | Primary Signals |
+|-------|------|----------|------|-----------------|
+| TVSeriesAgent | `tv_series` | Entertainment | TMDb, OMDb | Season/episode patterns, year ranges |
+| MovieAgent | `movie` | Entertainment | TMDb, OMDb | Film keywords, runtime patterns |
+| AnimeAgent | `anime` | Entertainment | Jikan (MAL) | Japanese chars, anime keywords |
+| BookAgent | `book` | Leisure | OpenLibrary | "by Author", ISBN, page counts |
+| GameAgent | `game` | Leisure | RAWG | Platform names, game genres |
+
+### AgentOrchestrator
+
+The orchestrator manages all agents and coordinates detection/enrichment:
+
+```typescript
+class AgentOrchestrator {
+  private agents: BaseAgent[] = [];
+
+  // Detection: Run all agents in parallel, return best match
+  async detect(context: DetectionContext): Promise<OrchestratorDetectionResult> {
+    const results = await Promise.all(
+      agents.map(agent => ({
+        agent,
+        result: agent.canHandle(context)
+      }))
+    );
+    // Sort by confidence + priority, return best match
+    return selectBestResult(results);
+  }
+
+  // Enrichment: Delegate to appropriate agent
+  async enrich(title: string, type: ContentType, year?: string): Promise<EnrichedData> {
+    const agent = this.getAgent(type);
+    return agent.enrich(title, year);
+  }
+
+  // Combined detect + enrich
+  async process(context: DetectionContext): Promise<{ detection, data }>;
+}
+```
+
+### Detection Context
+
+What each agent receives for detection:
+
+```typescript
+interface DetectionContext {
+  title: string;           // Card title
+  description?: string;    // Card description
+  listContext?: string;    // List/category name
+  urls?: string[];         // Extracted URLs
+  checklistNames?: string[]; // Checklist titles (e.g., "Season 1")
+}
+```
+
+### Agent Detection Result
+
+What each agent returns from detection:
+
+```typescript
+interface AgentDetectionResult {
+  type: ContentType;
+  confidence: number;     // 0-100
+  signals: string[];      // Why this was detected
+  metadata: {
+    title: string;
+    year?: string;
+    yearRange?: string;
+    author?: string;
+  };
+}
+```
+
+### Adding a New Agent
+
+To add support for a new content type:
+
+1. Create a new agent file in the appropriate category folder:
+   ```
+   src/engine/agents/leisure/PodcastAgent.ts
+   ```
+
+2. Extend `BaseAgent` and implement required methods:
+   ```typescript
+   export class PodcastAgent extends BaseAgent {
+     readonly type = 'podcast' as const;
+     readonly name = 'Podcast Agent';
+     readonly category = 'leisure' as const;
+     readonly apis = ['Spotify', 'Apple Podcasts'];
+
+     protected keywords = [/\bpodcast\b/i, /\bepisodes?\b/i];
+     protected contextKeywords = [...];
+     protected urlPatterns = [...];
+
+     protected getListContextMappings() { return [...]; }
+
+     async enrich(title: string): Promise<EnrichedData> {
+       // Call Spotify/Apple Podcasts API
+     }
+   }
+   ```
+
+3. Register in `AgentOrchestrator.ts`:
+   ```typescript
+   import { PodcastAgent } from './leisure/PodcastAgent';
+
+   private initializeAgents(): void {
+     // ... existing agents
+     this.agents.push(new PodcastAgent());
+   }
+   ```
+
+4. Export from `agents/index.ts`:
+   ```typescript
+   export { PodcastAgent } from './leisure/PodcastAgent';
+   ```
+
+5. Add type to `types.ts`:
+   ```typescript
+   type ContentType = ... | 'podcast' | ...;
+   ```
+
+---
+
 ### Enrichment Phase
 
-**Location:** `src/engine/ContentEngine.ts`
+**Location:** `src/engine/ContentEngine.ts` → `AgentOrchestrator` → Individual Agents
 
 **Process:**
-1. Check cache (1-hour TTL)
-2. Call appropriate API based on content type
-3. Merge data from multiple APIs
-4. Cache result
-5. Return enriched data
+1. ContentEngine checks cache (1-hour TTL)
+2. If not cached, delegates to AgentOrchestrator
+3. Orchestrator routes to appropriate agent by content type
+4. Agent calls its APIs and merges data
+5. ContentEngine caches result
+6. Return enriched data
 
 **API Flow by Content Type:**
 
@@ -384,10 +558,26 @@ src/
 ├── engine/                          # Smart Content Engine
 │   ├── index.ts                     # Public exports
 │   ├── types.ts                     # Type definitions
-│   ├── ContentEngine.ts             # Main engine (detect + enrich)
+│   ├── ContentEngine.ts             # Main engine (cache + orchestrator)
+│   │
+│   ├── agents/                      # Agent Architecture
+│   │   ├── index.ts                 # Agent exports
+│   │   ├── BaseAgent.ts             # Abstract base class
+│   │   ├── AgentOrchestrator.ts     # Coordinates all agents
+│   │   │
+│   │   ├── entertainment/           # Entertainment category agents
+│   │   │   ├── TVSeriesAgent.ts     # TV shows (TMDb + OMDb)
+│   │   │   ├── MovieAgent.ts        # Movies (TMDb + OMDb)
+│   │   │   └── AnimeAgent.ts        # Anime (Jikan/MAL)
+│   │   │
+│   │   └── leisure/                 # Leisure category agents
+│   │       ├── BookAgent.ts         # Books (OpenLibrary)
+│   │       └── GameAgent.ts         # Games (RAWG)
+│   │
 │   ├── detection/
-│   │   └── ContentDetector.ts       # Pattern matching detection
-│   └── enrichment/
+│   │   └── ContentDetector.ts       # Legacy pattern matching
+│   │
+│   └── enrichment/                  # API clients (used by agents)
 │       ├── tmdb.ts                  # TMDb API client
 │       ├── omdb.ts                  # OMDb API client
 │       ├── jikan.ts                 # Jikan API client (anime)
@@ -426,18 +616,26 @@ VITE_RAWG_API_KEY=your_rawg_key
 
 ## Future Considerations
 
+### Agent Architecture Extensions
+- [ ] PodcastAgent - Spotify, Apple Podcasts APIs
+- [ ] RecipeAgent - Spoonacular API
+- [ ] MusicAgent - Spotify, Last.fm APIs
+- [ ] Custom agents for user-defined content types
+- [ ] Agent priority configuration per user
+
 ### Planned Improvements
 - [ ] Run detection during import, not just on modal open
 - [ ] Batch API calls for multiple cards
 - [ ] Offline mode with cached data
-- [ ] More content types (Podcasts, Recipes, etc.)
 - [ ] User preferences for default content type per list
+- [ ] Use AgentOrchestrator for detection (not just enrichment)
 
 ### Performance Optimizations
 - [ ] Debounce detection on rapid modal opens
 - [ ] Prefetch enrichment for visible cards
 - [ ] Service worker for API caching
+- [ ] Agent detection result caching
 
 ---
 
-*Last updated: 2026-01-18 | Version: 0.3.3*
+*Last updated: 2026-01-18 | Version: 0.3.4 (Agent Architecture)*

@@ -1,5 +1,6 @@
 // Smart Content Engine - Main Entry Point
 // Detects content type and enriches with relevant data
+// Now powered by the Agent Architecture for modular, extensible processing
 
 import {
   ContentType,
@@ -17,11 +18,12 @@ import {
   getContentTypeName,
 } from './detection/ContentDetector';
 
-import { enrichFromTMDb } from './enrichment/tmdb';
-import { getOMDbRatings } from './enrichment/omdb';
-import { enrichFromJikan } from './enrichment/jikan';
-import { enrichFromOpenLibrary, getBooksByAuthor } from './enrichment/openLibrary';
-import { enrichFromRAWG } from './enrichment/rawg';
+// Agent Architecture - orchestrates specialized content agents
+import {
+  getOrchestrator,
+  type DetectionContext,
+  type OrchestratorDetectionResult,
+} from './agents';
 
 // Simple in-memory cache with TTL
 interface CacheEntry {
@@ -95,35 +97,19 @@ export async function enrich(
 
     let data: EnrichedData = null;
 
-    // Enrich based on content type
-    switch (type) {
-      case 'tv_series':
-        data = await enrichTVSeries(title, searchYear);
-        break;
+    // Use the Agent Orchestrator for enrichment
+    // Each agent handles its own content type and API calls
+    const orchestrator = getOrchestrator();
 
-      case 'movie':
-        data = await enrichMovie(title, searchYear);
-        break;
-
-      case 'anime':
-        data = await enrichAnime(title);
-        break;
-
-      case 'book':
-        data = await enrichBook(title, metadata.author);
-        break;
-
-      case 'game':
-        data = await enrichGame(title);
-        break;
-
-      default:
-        return {
-          success: false,
-          data: null,
-          error: `Unknown content type: ${type}`,
-        };
+    if (type === 'unknown') {
+      return {
+        success: false,
+        data: null,
+        error: 'Unknown content type - cannot enrich',
+      };
     }
+
+    data = await orchestrator.enrich(title, type, searchYear);
 
     if (data) {
       setCache(cacheKey, data);
@@ -150,94 +136,8 @@ export async function enrich(
   }
 }
 
-// Entertainment enrichment functions
-async function enrichTVSeries(
-  title: string,
-  year?: string
-): Promise<EntertainmentData | null> {
-  // Get base data from TMDb
-  const tmdbData = await enrichFromTMDb(title, 'tv_series', year?.split(' ')[0]);
-  if (!tmdbData) return null;
-
-  // Enhance with OMDb ratings (IMDb, Rotten Tomatoes, Metacritic)
-  const omdbRatings = await getOMDbRatings(
-    title,
-    'series',
-    year?.split(' ')[0],
-    tmdbData.imdbId
-  );
-
-  // Merge ratings (dedupe by source)
-  const allRatings = [...(tmdbData.ratings || [])];
-  for (const rating of omdbRatings) {
-    if (!allRatings.some(r => r.source === rating.source)) {
-      allRatings.push(rating);
-    }
-  }
-
-  return {
-    ...tmdbData,
-    ratings: allRatings,
-  } as EntertainmentData;
-}
-
-async function enrichMovie(
-  title: string,
-  year?: string
-): Promise<EntertainmentData | null> {
-  // Get base data from TMDb
-  const tmdbData = await enrichFromTMDb(title, 'movie', year);
-  if (!tmdbData) return null;
-
-  // Enhance with OMDb ratings
-  const omdbRatings = await getOMDbRatings(title, 'movie', year, tmdbData.imdbId);
-
-  // Merge ratings
-  const allRatings = [...(tmdbData.ratings || [])];
-  for (const rating of omdbRatings) {
-    if (!allRatings.some(r => r.source === rating.source)) {
-      allRatings.push(rating);
-    }
-  }
-
-  return {
-    ...tmdbData,
-    ratings: allRatings,
-  } as EntertainmentData;
-}
-
-async function enrichAnime(title: string): Promise<EntertainmentData | null> {
-  const jikanData = await enrichFromJikan(title);
-  if (!jikanData) return null;
-
-  return jikanData as EntertainmentData;
-}
-
-// Leisure enrichment functions
-async function enrichBook(
-  title: string,
-  author?: string
-): Promise<BookData | null> {
-  const bookData = await enrichFromOpenLibrary(title, author);
-  if (!bookData) return null;
-
-  // Get related books by same author
-  if (bookData.author) {
-    const related = await getBooksByAuthor(bookData.author, bookData.title);
-    if (related.length > 0) {
-      bookData.related = related;
-    }
-  }
-
-  return bookData as BookData;
-}
-
-async function enrichGame(title: string): Promise<GameData | null> {
-  const gameData = await enrichFromRAWG(title);
-  if (!gameData) return null;
-
-  return gameData as GameData;
-}
+// Export the orchestrator for direct access when needed
+export { getOrchestrator };
 
 // Export utility functions
 export { getContentTypeIcon, getContentTypeName };

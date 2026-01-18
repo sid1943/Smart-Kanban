@@ -2,6 +2,89 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.4] - 2026-01-18
+
+### Major Refactor: Agent Architecture
+
+The Smart Content Engine has been refactored from a monolithic switch/case design to a modular **Agent Architecture**. Each content type is now handled by a specialized agent that owns its detection patterns and API integrations.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         AGENT ARCHITECTURE                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ContentEngine ──► AgentOrchestrator ──┬──► TVSeriesAgent (TMDb+OMDb)  │
+│       │                                ├──► MovieAgent (TMDb+OMDb)      │
+│       │                                ├──► AnimeAgent (Jikan)          │
+│    Cache                               ├──► BookAgent (OpenLibrary)     │
+│   (1 hour)                             └──► GameAgent (RAWG)            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Added
+
+- **BaseAgent Abstract Class** (`src/engine/agents/BaseAgent.ts`)
+  - Shared detection logic (keywords, URL patterns, list context)
+  - Metadata extraction (year, year range, author)
+  - Confidence scoring system
+  - Abstract `enrich()` method for subclasses
+
+- **AgentOrchestrator** (`src/engine/agents/AgentOrchestrator.ts`)
+  - Manages all content agents
+  - Parallel detection across all agents
+  - Routes enrichment to appropriate agent by content type
+  - Configurable confidence threshold (default: 25%)
+  - Combined `process()` method for detect + enrich
+
+- **Entertainment Agents** (`src/engine/agents/entertainment/`)
+  - `TVSeriesAgent` - TV shows, miniseries (TMDb + OMDb APIs)
+  - `MovieAgent` - Films, cinema (TMDb + OMDb APIs)
+  - `AnimeAgent` - Japanese animation (Jikan/MAL API)
+
+- **Leisure Agents** (`src/engine/agents/leisure/`)
+  - `BookAgent` - Books, novels (OpenLibrary API)
+  - `GameAgent` - Video games (RAWG API)
+
+- **New Exports** (`src/engine/index.ts`)
+  - `getOrchestrator()` - Get singleton orchestrator instance
+  - `BaseAgent`, `AgentOrchestrator` - For extension
+  - All individual agents for direct use
+  - Type exports: `DetectionContext`, `AgentDetectionResult`, `OrchestratorConfig`
+
+### Changed
+
+- **ContentEngine** now delegates enrichment to AgentOrchestrator
+  - Removed individual `enrichTVSeries()`, `enrichMovie()`, etc. functions
+  - Cache layer remains in ContentEngine
+  - Single line: `orchestrator.enrich(title, type, year)`
+
+### Benefits
+
+| Before | After |
+|--------|-------|
+| Switch/case with 5 branches | 5 independent agents |
+| Enrichment logic in ContentEngine | Each agent owns its APIs |
+| Adding new type = modify switch | Adding new type = create agent |
+| Sequential detection | Parallel detection |
+| Hard to test individual types | Agents are unit-testable |
+
+### How to Add a New Content Type
+
+1. Create agent: `src/engine/agents/leisure/PodcastAgent.ts`
+2. Extend `BaseAgent`, implement `keywords`, `urlPatterns`, `enrich()`
+3. Register in `AgentOrchestrator.initializeAgents()`
+4. Export from `agents/index.ts`
+5. Add type to `ContentType` in `types.ts`
+
+### Updated Documentation
+
+- `docs/ARCHITECTURE.md` - Comprehensive agent architecture docs
+
+---
+
 ## [0.3.3] - 2026-01-18
 
 ### Problem Solved: Why Imports Failed to Show Smart Insights
