@@ -99,6 +99,21 @@ src/
 - `TaskQueue` - Priority queue for tasks
 - `RateLimiter` - API rate limiting
 
+## Dev Server Management
+
+**IMPORTANT**: Only ONE dev server should run at a time.
+
+- Before starting a new dev server, check if one is already running
+- If a server is already running, do NOT start another one - Vite has Hot Module Replacement (HMR) that auto-refreshes on file changes
+- The running server will automatically detect changes and refresh the browser
+- Only restart the server if there's a configuration change (vite.config.ts, tailwind.config.js, etc.)
+
+```bash
+# Check if dev server is running before starting
+# If already running, just save files - HMR will handle the rest
+npm run dev
+```
+
 ## Testing
 
 No test framework currently configured. Manual testing via:
