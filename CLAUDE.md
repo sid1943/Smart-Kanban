@@ -37,20 +37,47 @@ Confirms the project builds successfully.
 - Update `CHANGELOG.md` under "Fixed" section
 - Update `docs/ERRORS.md` if relevant
 
-### 4. Commit Changes
+### 4. Git Workflow (Feature Branch)
+
+**IMPORTANT**: NEVER push directly to main. Always use feature branches.
+
+#### Step 1: Create a feature branch
+```bash
+git checkout -b type/short-description
+# Examples:
+# git checkout -b feat/add-dark-mode
+# git checkout -b fix/login-bug
+# git checkout -b docs/update-readme
+```
+
+#### Step 2: Commit changes
 ```bash
 git add .
 git commit -m "type(scope): description"
 ```
 
-**Commit Types:**
-- `feat` - New feature
-- `fix` - Bug fix
-- `refactor` - Code refactoring
-- `docs` - Documentation only
-- `style` - Formatting, no code change
-- `test` - Adding tests
-- `chore` - Maintenance tasks
+#### Step 3: Push branch and create PR
+```bash
+git push -u origin branch-name
+gh pr create --title "type(scope): description" --body "Description of changes"
+```
+
+#### Step 4: Merge after review
+```bash
+# After PR is approved, merge via GitHub UI or:
+gh pr merge --squash
+```
+
+**Branch Naming:**
+- `feat/` - New feature
+- `fix/` - Bug fix
+- `refactor/` - Code refactoring
+- `docs/` - Documentation only
+- `style/` - Formatting, no code change
+- `test/` - Adding tests
+- `chore/` - Maintenance tasks
+
+**Commit Types:** Same prefixes as branch naming (feat, fix, refactor, docs, style, test, chore)
 
 ## Key Directories
 
