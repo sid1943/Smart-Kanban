@@ -1,0 +1,91 @@
+================================================================================
+SMART KANBAN - CHANGELOG
+Date: 2026-01-19
+================================================================================
+
+VERSION 0.3.6 - Generalized New Content Detection for All Content Types
+--------------------------------------------------------------------------------
+
+[NEW] Generalized New Content Detection
+- Extended "new content" detection beyond TV series to ALL content types
+- Strategy pattern architecture for type-specific detection logic
+- Content-specific badge labels based on content kind
+
+NEW CONTENT SIGNALS BY TYPE:
+- TV Series: New seasons on TMDb vs checklist, upcoming seasons via next_episode_to_air
+- Movies: Sequel detection in franchise via TMDb belongs_to_collection
+- Anime: Sequel detection via Jikan relations API + season tracking
+- Books: New books in series or by same author via Open Library
+- Games: Sequel/DLC detection via RAWG game-series endpoint
+
+[NEW] Content-Specific Badge Labels
+- "NEW SEASON" - For TV series and anime with new seasons
+- "SEQUEL" - For movies, anime, and games with sequels available
+- "NEW BOOK" - For book series with new entries
+- "DLC" - For games with new DLC/expansions
+- "NEW RELEASE" - For related content by same author
+- "UPCOMING" - For any content with future release date
+
+[NEW] Generic UpcomingContent Interface
+- contentKind: 'season' | 'sequel' | 'book' | 'dlc' | 'related' | 'episode'
+- title: Display title (e.g., "Season 4", "The Dark Knight Rises")
+- releaseDate: Optional ISO date string
+- description: Optional additional info
+- source: 'tmdb' | 'jikan' | 'openlibrary' | 'rawg'
+- seasonNumber/episodeNumber/seriesPosition: Type-specific metadata
+
+[NEW] Detection Strategy Architecture
+- NewContentDetector.ts: Base interfaces and helper functions
+- NewContentOrchestrator.ts: Strategy registry and routing
+- TVSeriesStrategy.ts: Compares checklist seasons vs TMDb
+- MovieStrategy.ts: Checks franchise for unreleased sequels
+- AnimeStrategy.ts: Checks seasons + Jikan related for sequels
+- BookStrategy.ts: Checks series position and author releases
+- GameStrategy.ts: Checks series for newer games/DLC
+
+[REFACTOR] useNewContentScanner Hook
+- Now supports all content types, not just TV series
+- Uses AgentOrchestrator.enrich() for type-appropriate API calls
+- Uses NewContentOrchestrator.detect() for type-specific detection
+- Generic UpcomingContent storage on tasks
+
+[FIX] Universal Import Enrichment
+- Import process now enriches ALL content types (movies, books, games, etc.)
+- Previously only TV series cards with season checklists were enriched during import
+- Now uses AgentOrchestrator.enrich() for type-appropriate API calls
+- Uses NewContentOrchestrator.detect() for new content detection
+- Movies now get sequel detection, books get series detection, etc.
+
+[UPDATE] UI Badge Rendering
+- Dynamic badge text based on upcomingContent.contentKind
+- Uses getContentKindLabel() helper for display text
+- Uses isUpcoming() helper to determine "UPCOMING" vs released
+
+[FIX] Data Persistence Race Condition
+- Fixed bug where refreshing the app could lose all data
+- Added hasLoaded flag to prevent save effect from running before load completes
+- Ensures localStorage is not overwritten with empty state during initial mount
+
+--------------------------------------------------------------------------------
+
+FILES MODIFIED:
+- src/engine/types.ts (added UpcomingContent, UpcomingContentKind, UpcomingContentSource)
+- src/engine/index.ts (new exports for types and detection module)
+- src/hooks/useNewContentScanner.ts (refactored for all content types)
+- src/App.tsx (updated TaskItem interface, badge rendering, imports)
+- src/components/TaskDetailModal.tsx (updated TaskItem interface)
+- CHANGELOG.md (updated)
+- TODO.md (marked generalized detection complete)
+
+FILES ADDED:
+- src/engine/detection/NewContentDetector.ts (base interfaces and helpers)
+- src/engine/detection/NewContentOrchestrator.ts (strategy orchestrator)
+- src/engine/detection/index.ts (module exports)
+- src/engine/detection/strategies/TVSeriesStrategy.ts
+- src/engine/detection/strategies/MovieStrategy.ts
+- src/engine/detection/strategies/AnimeStrategy.ts
+- src/engine/detection/strategies/BookStrategy.ts
+- src/engine/detection/strategies/GameStrategy.ts
+- src/changelogs/changelog-2026-01-19.txt (this file)
+
+================================================================================

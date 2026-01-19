@@ -20,6 +20,9 @@ export type {
   ContentRating,
   StreamingAvailability,
   RelatedContent,
+  UpcomingContent,
+  UpcomingContentKind,
+  UpcomingContentSource,
 } from './types';
 
 export {
@@ -48,6 +51,19 @@ export {
   BookAgent,
   GameAgent,
 } from './agents';
+
+// New Content Detection System
+export {
+  NewContentOrchestrator,
+  getNewContentOrchestrator,
+  resetNewContentOrchestrator,
+  getContentKindLabel,
+  isUpcoming,
+  type NewContentStrategy,
+  type NewContentDetectionContext,
+  type NewContentDetectionResult,
+  type ChecklistInfo,
+} from './detection';
 
 // Worker System exports (background processing)
 export {

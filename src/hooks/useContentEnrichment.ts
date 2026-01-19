@@ -11,6 +11,10 @@ interface UseContentEnrichmentProps {
   // If content type was already set (stored or manual), use it directly
   storedContentType?: ContentType;
   storedContentTypeManual?: boolean;
+  // Cached enrichment data (to avoid re-fetching)
+  cachedData?: EnrichedData;
+  // Callback when new data is fetched (to persist it)
+  onDataFetched?: (data: EnrichedData) => void;
 }
 
 interface UseContentEnrichmentResult {
@@ -31,15 +35,34 @@ export function useContentEnrichment({
   checklistNames,
   storedContentType,
   storedContentTypeManual,
+  cachedData,
+  onDataFetched,
 }: UseContentEnrichmentProps): UseContentEnrichmentResult {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
-  const [data, setData] = useState<EnrichedData>(null);
+  const [data, setData] = useState<EnrichedData>(cachedData || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsUserInput, setNeedsUserInput] = useState(false);
   const [suggestedTypes, setSuggestedTypes] = useState<{ type: ContentType; confidence: number }[]>([]);
 
   useEffect(() => {
+    // If we have cached data, use it immediately and skip fetching
+    if (cachedData) {
+      setData(cachedData);
+      // Still set detection for UI purposes
+      if (storedContentType) {
+        setDetection({
+          type: storedContentType,
+          category: ['tv_series', 'movie', 'anime'].includes(storedContentType) ? 'entertainment' : 'leisure',
+          confidence: 100,
+          signals: ['Cached'],
+          metadata: { title },
+        });
+      }
+      setNeedsUserInput(false);
+      return;
+    }
+
     // If user manually set type, use it directly without detection
     if (storedContentType && storedContentTypeManual) {
       setDetection({
@@ -76,7 +99,7 @@ export function useContentEnrichment({
 
     setNeedsUserInput(false);
     fetchEnrichment(result.type);
-  }, [title, description, listContext, urls, checklistNames, storedContentType, storedContentTypeManual]);
+  }, [title, description, listContext, urls, checklistNames, storedContentType, storedContentTypeManual, cachedData]);
 
   function fetchEnrichment(type: ContentType) {
     if (type === 'unknown') return;
@@ -99,6 +122,10 @@ export function useContentEnrichment({
       .then((enrichResult) => {
         if (enrichResult.success && enrichResult.data) {
           setData(enrichResult.data);
+          // Notify parent to cache this data
+          if (onDataFetched) {
+            onDataFetched(enrichResult.data);
+          }
         } else {
           setError(enrichResult.error || 'Failed to fetch data');
         }

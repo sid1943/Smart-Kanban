@@ -64,7 +64,15 @@ export interface EntertainmentData {
   seasons?: number;
   episodes?: number;
   status?: 'ongoing' | 'ended' | 'upcoming';
+  inProduction?: boolean;
   genres?: string[];
+
+  // Upcoming content
+  nextSeason?: {
+    seasonNumber: number;
+    airDate: string;
+    episodeName?: string;
+  };
 
   // Where to watch
   streaming?: StreamingAvailability[];
@@ -151,6 +159,22 @@ export interface MusicData {
 }
 
 export type EnrichedData = EntertainmentData | BookData | GameData | MusicData | null;
+
+// Generic upcoming/new content info - used across all content types
+export type UpcomingContentKind = 'season' | 'sequel' | 'book' | 'dlc' | 'related' | 'episode';
+export type UpcomingContentSource = 'tmdb' | 'jikan' | 'openlibrary' | 'rawg';
+
+export interface UpcomingContent {
+  contentKind: UpcomingContentKind;
+  title: string;
+  releaseDate?: string;
+  description?: string;
+  source: UpcomingContentSource;
+  // Additional metadata for specific types
+  seasonNumber?: number;
+  episodeNumber?: number;
+  seriesPosition?: number;
+}
 
 export interface EnrichmentResult {
   success: boolean;

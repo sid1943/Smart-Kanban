@@ -41,10 +41,27 @@ interface TMDbDetails {
   number_of_seasons?: number;
   number_of_episodes?: number;
   status?: string;
+  in_production?: boolean;
   genres?: { id: number; name: string }[];
   imdb_id?: string;
   belongs_to_collection?: {
     id: number;
+    name: string;
+  };
+  // Upcoming episode/season info
+  next_episode_to_air?: {
+    id: number;
+    air_date: string;
+    episode_number: number;
+    season_number: number;
+    name: string;
+    overview: string;
+  };
+  last_episode_to_air?: {
+    id: number;
+    air_date: string;
+    episode_number: number;
+    season_number: number;
     name: string;
   };
 }
@@ -280,7 +297,14 @@ export async function enrichFromTMDb(
       : details.status === 'Returning Series' || details.status === 'In Production'
         ? 'ongoing'
         : undefined,
+    inProduction: details.in_production,
     genres: details.genres?.map(g => g.name),
+    // Upcoming season info
+    nextSeason: details.next_episode_to_air ? {
+      seasonNumber: details.next_episode_to_air.season_number,
+      airDate: details.next_episode_to_air.air_date,
+      episodeName: details.next_episode_to_air.name,
+    } : undefined,
     streaming,
     imdbId: details.imdb_id,
     tmdbId: String(details.id),

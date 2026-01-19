@@ -2,6 +2,65 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.6] - 2026-01-19
+
+### Added
+
+- **Generalized New Content Detection**: Extended "new content" detection to all content types
+  - **TV Series**: Detects new seasons via TMDb `number_of_seasons` and `next_episode_to_air`
+  - **Movies**: Detects sequels in franchises via TMDb `belongs_to_collection`
+  - **Anime**: Detects sequels via Jikan relations API and season tracking
+  - **Books**: Detects new books in series or by same author via Open Library
+  - **Games**: Detects sequels and DLC via RAWG game-series endpoint
+  - Content-specific badge labels: "NEW SEASON", "SEQUEL", "NEW BOOK", "DLC", etc.
+  - "UPCOMING" badge for future releases (based on release date)
+  - Generic `UpcomingContent` interface for all content types
+
+- **New Content Detection Architecture**
+  - Strategy pattern with type-specific detection strategies
+  - `NewContentOrchestrator` for routing to appropriate strategy
+  - `TVSeriesStrategy`, `MovieStrategy`, `AnimeStrategy`, `BookStrategy`, `GameStrategy`
+  - Extensible design for adding new content types
+
+- **Universal Import Enrichment**
+  - Import process now enriches all content types (movies, books, games, etc.)
+  - Previously only TV series with season checklists were enriched
+  - Uses `AgentOrchestrator.enrich()` for type-appropriate API calls
+  - Uses `NewContentOrchestrator.detect()` for new content detection
+
+- **Enrichment Data Caching**
+  - Enrichment data is now cached on the task and persisted to localStorage
+  - Opening a card no longer re-fetches data - uses cached data instantly
+  - Background scanner pre-fetches and caches data for all cards on board load
+  - Cache is cleared when content type is manually changed (triggers refetch)
+  - Stored in `task.cachedEnrichment` with `data` and `fetchedAt` timestamp
+
+- **Background Scanner Improvements**
+  - Scanner now caches enrichment data for all content types (not just TV)
+  - Scans movies, books, games, anime - caches data so card opens are instant
+  - Uses cached data when available (skips API call, no rate limiting delay)
+  - Only fetches from API for tasks without cached data
+
+- **Pre-Load Enrichment Screen**
+  - On app load, checks all tasks for missing cached enrichment
+  - Shows full-screen loading UI with progress bar while fetching
+  - Fetches and caches data BEFORE showing the board
+  - Once complete, all card opens are instant - no loading spinners
+  - Progress shows "X / Y" with animated progress bar
+
+### Fixed
+
+- **Data Persistence Race Condition**: Fixed a bug where refreshing the app could lose all data
+  - Added `hasLoaded` flag to prevent save effect from running before load completes
+  - Ensures localStorage is not overwritten with empty state during initial mount
+  - Data now reliably persists across page refreshes
+
+- **Import Missing Content Type Detection**: Fixed import not enriching non-TV content
+  - Root cause: Tasks were created without `contentType` field during import
+  - The enrichment filter checked for `contentType` which was always undefined
+  - Added content type detection phase during import that runs BEFORE enrichment
+  - Now all content types (movies, books, games, anime) are detected and enriched on import
+
 ## [0.3.5] - 2026-01-18
 
 ### Added
@@ -18,6 +77,52 @@ All notable changes to Smart Kanban will be documented in this file.
   - Shows filtered count (e.g., "3 of 10 items")
   - Hides checklists with no matches
   - Clear button to reset search
+
+- **Auto-Complete Card on Full Checklist Completion**
+  - Cards are automatically marked as "done" when all checklist items are checked
+  - Works during Trello import (pre-completed checklists)
+  - Works when checking the final item interactively
+  - Helps track when new content is added (e.g., new season released)
+
+- **New Season Detection & Auto-Add**
+  - Automatically detects when new seasons are available via TMDb API
+  - Shows amber alert banner "New Season Available!" in Your Progress section
+  - Compares API season count with checklist items (e.g., 4 seasons on TMDb vs 3 in checklist)
+  - "Add to List" button adds missing seasons with IMDb links
+  - Card automatically becomes "incomplete" when new seasons are added
+
+- **Dynamic Card Highlighting for New Content**
+  - Cards with new content get amber/gold background and border
+  - Animated "NEW" badge appears on card title
+  - Cards with new content automatically sort to top of their column
+  - Visual cue makes it easy to spot shows with new seasons
+
+- **Background Content Scanner**
+  - Automatically scans all TV series cards when board loads
+  - Compares checklist seasons with TMDb API data
+  - Sets `hasNewContent` flag on cards with new seasons
+  - Shows scanning progress indicator in header ("Scanning 2/4")
+  - Rate-limited to 4 requests/second to respect API limits
+
+- **Upcoming Season Detection**
+  - Detects announced but not-yet-released seasons via TMDb `next_episode_to_air`
+  - Cards show "UPCOMING" badge instead of "NEW" for future content
+  - Displays upcoming air date (e.g., "S10 • Feb 15, 2026")
+  - Works even before episodes are added to TMDb database
+
+- **Show Status Indicators**
+  - "Returning" badge (blue) for ongoing shows that may get new seasons
+  - "Ended" badge (gray) for shows that have concluded
+  - Status automatically updated during background scan
+
+- **Manual Refresh Button**
+  - "Refresh" button in header to rescan all cards on demand
+  - Useful for checking updates after a show is announced
+
+- **Checklists Collapsed by Default**
+  - Checklists now start collapsed in task detail modal
+  - Reduces visual clutter when opening cards
+  - Click header or "Expand All" to view items
 
 - **Worker Infrastructure** (Background Processing)
   - `TaskCoordinator` - Orchestrates task execution across workers

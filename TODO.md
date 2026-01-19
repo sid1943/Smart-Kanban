@@ -96,6 +96,22 @@ Future improvements and features to be added.
 - [ ] Add unit tests for core functions
 - [ ] Add E2E tests with Playwright/Cypress
 
+### Content Scanner Performance (High Priority)
+- [ ] **Reduce initial loading time** - Scanner currently blocks perceived load
+  - Consider: Cache TMDb responses in localStorage with TTL (24h?)
+  - Consider: Use Web Worker for API calls to not block main thread
+  - Consider: Batch API requests where possible
+  - Consider: Progressive scan (scan visible cards first, then rest)
+- [ ] **Parallel API requests** - Currently sequential (250ms between each)
+  - TMDb allows 40 req/10 sec - can do 3-4 concurrent requests safely
+  - Use Promise.all with chunking for faster scans
+- [ ] **Smart caching** - Don't re-scan unchanged cards
+  - Store last scan timestamp per card
+  - Only re-scan if card modified or >24h since last scan
+- [ ] **Lazy scanning** - Only scan cards when they come into view
+  - Use Intersection Observer for viewport-based scanning
+  - Prioritize cards user is likely to see
+
 ### Worker Traffic Optimization (High Priority)
 - [ ] Replace polling-based processing with event-driven approach in TaskCoordinator (100ms interval is wasteful)
 - [ ] Optimize TaskQueue with heap/priority queue data structure (current O(n log n) sort on every call)
@@ -143,7 +159,7 @@ Future improvements and features to be added.
 - [ ] Add Recipe lens (nutrition, ingredients)
 - [ ] Configurable API keys in settings
 - [ ] Offline mode with cached data
-- [ ] Background refresh for ongoing shows
+- [x] Generalized new content detection for all content types (v0.3.6)
 
 ---
 
@@ -164,7 +180,11 @@ Future improvements and features to be added.
 - [x] Entertainment Lens - TV, Movies, Anime with TMDb/OMDb/Jikan (v0.3.0)
 - [x] Leisure Lens - Books, Games with OpenLibrary/RAWG (v0.3.0)
 - [x] On-demand data fetching with caching (v0.3.0)
+- [x] Content type detection during import - Detect-Then-Enrich pattern (v0.3.6)
+- [x] Enrichment data caching on tasks (v0.3.6)
+- [x] Pre-load enrichment before board display (v0.3.6)
+- [x] Architecture documentation for import patterns (v0.3.6)
 
 ---
 
-*Last updated: 2026-01-17*
+*Last updated: 2026-01-19*

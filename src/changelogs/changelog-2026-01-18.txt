@@ -21,6 +21,57 @@ VERSION 0.3.5 - Collapsible & Searchable Checklists + Worker Infrastructure
 - Shows "X of Y items" count when filtering
 - Checklists with no matching items are hidden during search
 
+[NEW] Auto-Complete Card on Full Checklist Completion
+- Cards automatically marked as "done" when all checklist items are checked
+- Works during Trello import (pre-completed checklists get marked done)
+- Works when checking the final item interactively
+- Enables tracking when new content is added (e.g., new season released)
+
+[NEW] New Season Detection & Auto-Add
+- Automatically detects when new seasons are available via TMDb API
+- Compares API season count with checklist items (Season X pattern)
+- Shows amber alert banner "New Season Available!" in Your Progress section
+- "Add to List" button adds missing seasons to checklist with IMDb links
+- Card progress becomes incomplete, prompting user to watch new content
+
+[NEW] Dynamic Card Highlighting for New Content
+- Cards with hasNewContent flag get amber/gold background and border
+- Animated "NEW" badge pulses on card title
+- Cards with new content auto-sort to TOP of their column
+- Opening a card with new seasons auto-sets the flag
+- Adding new seasons clears the flag and unchecks the card
+
+[NEW] Background Content Scanner
+- Automatically scans ALL TV series cards when board loads
+- No need to open each card - scanning happens in background
+- Compares checklist seasons with TMDb API data
+- Shows progress indicator in header ("Scanning 2/4")
+- Rate-limited to 4 requests/second (250ms between requests)
+- Uses useNewContentScanner hook for clean integration
+
+[NEW] Upcoming Season Detection
+- Detects ANNOUNCED but not-yet-released seasons via TMDb next_episode_to_air
+- Cards show "UPCOMING" badge (amber, pulsing) for future content
+- Displays upcoming air date below title (e.g., "S10 • Feb 15, 2026")
+- Works even before all episodes are added to TMDb database
+- Example: If Scrubs S10 announced for Feb, it's flagged immediately
+
+[NEW] Show Status Indicators on Cards
+- "Returning" badge (blue) for ongoing shows (may get new seasons)
+- "Ended" badge (gray) for concluded shows
+- Status auto-updated during background scan from TMDb
+- Helps know which shows to expect new content from
+
+[NEW] Manual Refresh Button
+- "Refresh" button appears in board header when not scanning
+- Click to rescan all cards on demand
+- Useful after a new season is announced
+
+[NEW] Checklists Collapsed by Default
+- Checklists now initialize collapsed in task detail modal
+- Shows mini progress bar when collapsed
+- Reduces visual clutter when opening cards
+
 [NEW] Worker Infrastructure (Background Processing)
 - TaskCoordinator: Orchestrates background task execution
 - WorkerPool: Manages 2-4 Web Workers with auto-scaling
@@ -54,7 +105,8 @@ VERSION 0.3.5 - Collapsible & Searchable Checklists + Worker Infrastructure
 --------------------------------------------------------------------------------
 
 FILES MODIFIED:
-- src/components/TaskDetailModal.tsx (collapsible + searchable checklists)
+- src/App.tsx (auto-complete card when all checklist items done)
+- src/components/TaskDetailModal.tsx (collapsible + searchable checklists, new season detection)
 - src/engine/agents/AgentOrchestrator.ts (background mode support)
 - src/engine/index.ts (new exports)
 - src/hooks/index.ts (new exports)
@@ -76,6 +128,7 @@ FILES ADDED:
 - src/engine/workers/validation/ValidationPipeline.ts
 - src/engine/workers/index.ts
 - src/hooks/useBackgroundEnrichment.ts
+- src/hooks/useNewContentScanner.ts (background scanning for new seasons)
 - src/components/WorkerStatus.tsx
 
 ================================================================================

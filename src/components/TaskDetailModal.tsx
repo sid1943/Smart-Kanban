@@ -1,7 +1,7 @@
 // Task Detail Modal with integrated Smart Insights
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useContentEnrichment } from '../hooks/useContentEnrichment';
-import { getContentTypeIcon, getContentTypeName, EntertainmentData, BookData, GameData, ContentType } from '../engine';
+import { getContentTypeIcon, getContentTypeName, EntertainmentData, BookData, GameData, ContentType, UpcomingContent, EnrichedData } from '../engine';
 import ContentTypePicker from './ContentTypePicker';
 
 interface TaskLabel {
@@ -46,6 +46,14 @@ interface TaskItem {
   contentType?: ContentType;
   contentTypeConfidence?: number;
   contentTypeManual?: boolean;
+  hasNewContent?: boolean;
+  upcomingContent?: UpcomingContent;
+  showStatus?: 'ongoing' | 'ended' | 'upcoming';
+  // Cached enrichment data (persisted to avoid re-fetching)
+  cachedEnrichment?: {
+    data: EnrichedData;
+    fetchedAt: string;
+  };
 }
 
 interface TaskDetailModalProps {
@@ -77,11 +85,25 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [newChecklistItemText, setNewChecklistItemText] = useState('');
   const [linksExpanded, setLinksExpanded] = useState(false);
   const [showTypePicker, setShowTypePicker] = useState(false);
-  // Checklist state - collapsible and searchable
-  const [collapsedChecklists, setCollapsedChecklists] = useState<Set<string>>(new Set());
+  // Checklist state - collapsible and searchable (collapsed by default)
+  const [collapsedChecklists, setCollapsedChecklists] = useState<Set<string>>(
+    () => new Set(task.checklists?.map(cl => cl.id) || [])
+  );
   const [checklistSearch, setChecklistSearch] = useState('');
 
-  // Fetch enriched data - pass stored content type if available
+  // Callback to cache enrichment data when fetched
+  const handleDataFetched = React.useCallback((data: EnrichedData) => {
+    if (data) {
+      onEditTask(task.id, {
+        cachedEnrichment: {
+          data,
+          fetchedAt: new Date().toISOString(),
+        },
+      });
+    }
+  }, [task.id, onEditTask]);
+
+  // Fetch enriched data - pass stored content type and cached data if available
   const { detection, data: enrichedData, loading: enrichLoading, needsUserInput, suggestedTypes } = useContentEnrichment({
     title: task.text,
     description: task.description,
@@ -90,14 +112,17 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     checklistNames: task.checklists?.map(cl => cl.name),
     storedContentType: task.contentType,
     storedContentTypeManual: task.contentTypeManual,
+    cachedData: task.cachedEnrichment?.data,
+    onDataFetched: handleDataFetched,
   });
 
-  // Handle content type selection
+  // Handle content type selection - clear cache to refetch for new type
   const handleContentTypeSelect = (type: ContentType) => {
     onEditTask(task.id, {
       contentType: type,
       contentTypeManual: true,
       contentTypeConfidence: 100,
+      cachedEnrichment: undefined, // Clear cache to fetch fresh data for new type
     });
     setShowTypePicker(false);
   };
@@ -106,6 +131,75 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const isEntertainment = enrichedData && ['tv_series', 'movie', 'anime'].includes(enrichedData.type);
   const isBook = enrichedData && enrichedData.type === 'book';
   const isGame = enrichedData && enrichedData.type === 'game';
+
+  // Detect new seasons available from API
+  const detectNewSeasons = (): { hasNew: boolean; newCount: number; seasonChecklist: Checklist | null; currentMax: number; apiSeasons: number } => {
+    if (!isEntertainment || !task.checklists) {
+      return { hasNew: false, newCount: 0, seasonChecklist: null, currentMax: 0, apiSeasons: 0 };
+    }
+
+    const apiSeasons = (enrichedData as EntertainmentData).seasons || 0;
+    if (apiSeasons === 0) {
+      return { hasNew: false, newCount: 0, seasonChecklist: null, currentMax: 0, apiSeasons: 0 };
+    }
+
+    // Find the "Season" checklist (or similar naming)
+    const seasonChecklist = task.checklists.find(cl =>
+      cl.name.toLowerCase().includes('season') ||
+      cl.items.some(item => /season\s*\d+/i.test(item.text))
+    );
+
+    if (!seasonChecklist) {
+      return { hasNew: false, newCount: 0, seasonChecklist: null, currentMax: 0, apiSeasons };
+    }
+
+    // Find the highest season number in the checklist
+    let currentMax = 0;
+    seasonChecklist.items.forEach(item => {
+      const match = item.text.match(/season\s*(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > currentMax) currentMax = num;
+      }
+    });
+
+    const newCount = apiSeasons - currentMax;
+    return {
+      hasNew: newCount > 0,
+      newCount,
+      seasonChecklist,
+      currentMax,
+      apiSeasons,
+    };
+  };
+
+  const newSeasonInfo = detectNewSeasons();
+
+  // Update hasNewContent flag when new seasons detected
+  useEffect(() => {
+    if (newSeasonInfo.hasNew && !task.hasNewContent) {
+      onEditTask(task.id, { hasNewContent: true });
+    } else if (!newSeasonInfo.hasNew && task.hasNewContent) {
+      onEditTask(task.id, { hasNewContent: false });
+    }
+  }, [newSeasonInfo.hasNew, task.hasNewContent, task.id, onEditTask]);
+
+  // Add new seasons to the checklist
+  const handleAddNewSeasons = () => {
+    if (!newSeasonInfo.seasonChecklist || newSeasonInfo.newCount <= 0) return;
+
+    // Add each new season
+    for (let i = newSeasonInfo.currentMax + 1; i <= newSeasonInfo.apiSeasons; i++) {
+      const imdbId = (enrichedData as EntertainmentData).imdbId;
+      const seasonText = imdbId
+        ? `Season ${i} https://www.imdb.com/title/${imdbId}/episodes?season=${i}`
+        : `Season ${i}`;
+      onAddChecklistItem(task.id, newSeasonInfo.seasonChecklist.id, seasonText);
+    }
+
+    // Clear the hasNewContent flag and uncheck the card since it's no longer complete
+    onEditTask(task.id, { hasNewContent: false, checked: false });
+  };
 
   return (
     <div
@@ -437,6 +531,34 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       ? `${task.checklistTotal} seasons to watch`
                       : `${task.checklistTotal - (task.checklistChecked || 0)} seasons remaining`
                   }
+                </div>
+              )}
+              {/* New Season Alert */}
+              {newSeasonInfo.hasNew && (
+                <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-400 text-lg">🎬</span>
+                      <div>
+                        <div className="text-amber-400 text-sm font-medium">
+                          {newSeasonInfo.newCount === 1
+                            ? 'New Season Available!'
+                            : `${newSeasonInfo.newCount} New Seasons Available!`}
+                        </div>
+                        <div className="text-amber-400/70 text-xs">
+                          {newSeasonInfo.newCount === 1
+                            ? `Season ${newSeasonInfo.apiSeasons} is out`
+                            : `Seasons ${newSeasonInfo.currentMax + 1}-${newSeasonInfo.apiSeasons} are out`}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleAddNewSeasons}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold rounded-md transition-colors"
+                    >
+                      Add to List
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

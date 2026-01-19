@@ -439,7 +439,44 @@ interface UseContentEnrichmentResult {
 
 ## Data Flow
 
+### Task Creation Patterns
+
+The application supports multiple ways to add tasks. Each method has different detection requirements:
+
+| Creation Method | Detection Timing | Enrichment Timing | Why |
+|-----------------|------------------|-------------------|-----|
+| **Trello Import** | During import (batch) | During import (batch) | Bulk operation - pre-cache for instant card opens |
+| **Manual Add** | On card open | On card open | Single task - lazy load is acceptable |
+| **Chat/AI Generated** | None | None | Learning tasks, not media content |
+| **Future: API Sync** | During sync | During sync | Bulk operation - same as import |
+
+### Standard: Detect-Then-Enrich Pattern
+
+**REQUIRED for all bulk/import operations.** This is the standard pattern for adding boards or importing data.
+
+| Step | Action | Required | Reason |
+|------|--------|----------|--------|
+| 1 | Parse source data | Yes | Convert external format to TaskItem[] |
+| 2 | Create tasks (without contentType) | Yes | Initial task structure |
+| 3 | **DETECT content types** | **CRITICAL** | Sets `contentType` field on each task |
+| 4 | Filter tasks by contentType | Yes | Only enrich recognized media types |
+| 5 | Enrich filtered tasks | Yes | Fetch API data, cache on task |
+| 6 | Store tasks | Yes | Persist to localStorage |
+
+**Why Phase 3 (Detection) is Critical:**
+- Tasks are created in Phase 2 without `contentType` field
+- Phase 4 filters by `contentType` to find enrichable tasks
+- Without Phase 3, `contentType` is undefined → all tasks fail filter → zero enrichment
+- This was the root cause of "import not working for movies" bug
+
 ### Import Flow
+
+**Key Technique: Detect-Then-Enrich Pattern**
+
+When importing external data, content type detection MUST run BEFORE enrichment filtering. This is critical because:
+1. Tasks are created without `contentType` initially
+2. Enrichment filters check `contentType` to determine which tasks to enrich
+3. Without detection first, all tasks fail the filter and get no enrichment
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
@@ -450,10 +487,101 @@ interface UseContentEnrichmentResult {
                                          └────────┬────────┘
                                                   │
                                                   ▼
+                                    ┌──────────────────────────┐
+                                    │ PHASE 1: DETECT TYPES    │
+                                    │ For each task:           │
+                                    │ - AgentOrchestrator      │
+                                    │   .detect(title, desc,   │
+                                    │    list, urls, checklists)│
+                                    │ - Set task.contentType   │
+                                    │ - Set task.confidence    │
+                                    └────────────┬─────────────┘
+                                                 │
+                                                 ▼
+                                    ┌──────────────────────────┐
+                                    │ PHASE 2: FILTER & ENRICH │
+                                    │ Filter tasks where:      │
+                                    │ - contentType is valid   │
+                                    │ - confidence >= 25       │
+                                    │                          │
+                                    │ For each filtered task:  │
+                                    │ - Fetch API data         │
+                                    │ - Cache enrichment       │
+                                    │ - Detect new content     │
+                                    └────────────┬─────────────┘
+                                                 │
+                                                 ▼
                                          ┌─────────────────┐
                                          │ Store in Goals  │
                                          │ (localStorage)  │
                                          └─────────────────┘
+```
+
+**Import Code Pattern:**
+```typescript
+// PHASE 1: Detect content types BEFORE filtering
+const orchestrator = getOrchestrator();
+for (const task of tasks) {
+  const detection = await orchestrator.detect({
+    title: task.text,
+    description: task.description,
+    listContext: task.category,
+    urls: task.links?.map(l => l.url),
+    checklistNames: task.checklists?.map(cl => cl.name),
+  });
+
+  if (detection.type !== 'unknown' && detection.confidence >= 25) {
+    task.contentType = detection.type;
+    task.contentTypeConfidence = detection.confidence;
+  }
+}
+
+// PHASE 2: Now filter works because contentType is set
+const tasksToEnrich = tasks.filter(t =>
+  t.contentType && scannableTypes.includes(t.contentType)
+);
+```
+
+**Why This Matters:**
+- Without Phase 1, all tasks have `contentType === undefined`
+- The enrichment filter checks `if (!task.contentType)` → returns false
+- Result: Zero tasks get enriched, no Smart Insights on import
+- With Phase 1, content types are detected first, filter finds valid tasks
+
+### Implementation Checklist for New Import Sources
+
+When adding a new import source (e.g., Notion, CSV, API), use this checklist:
+
+| # | Checklist Item | Code Reference |
+|---|----------------|----------------|
+| ☐ | Parse source into `TaskItem[]` array | Custom parser |
+| ☐ | Extract URLs from description/attachments | `task.links = [...]` |
+| ☐ | Map checklists if available | `task.checklists = [...]` |
+| ☐ | Set category from source list/board | `task.category = ...` |
+| ☐ | **Run detection loop BEFORE enrichment filter** | See code pattern below |
+| ☐ | Filter tasks with valid `contentType` | `tasks.filter(t => t.contentType)` |
+| ☐ | Enrich filtered tasks with API data | `orchestrator.enrich()` |
+| ☐ | Cache enrichment on task | `task.cachedEnrichment = {...}` |
+| ☐ | Run new content detection | `newContentOrchestrator.detect()` |
+| ☐ | Store tasks to state/localStorage | `setGoals(...)` |
+
+**Detection Loop (Copy This):**
+```typescript
+// CRITICAL: Detect content types BEFORE filtering
+const orchestrator = getOrchestrator();
+for (const task of tasks) {
+  const detection = await orchestrator.detect({
+    title: task.text,
+    description: task.description,
+    listContext: task.category,
+    urls: task.links?.map(l => l.url),
+    checklistNames: task.checklists?.map(cl => cl.name),
+  });
+  if (detection.type !== 'unknown' && detection.confidence >= 25) {
+    task.contentType = detection.type;
+    task.contentTypeConfidence = detection.confidence;
+  }
+}
 ```
 
 ### Card Open Flow
@@ -624,11 +752,11 @@ VITE_RAWG_API_KEY=your_rawg_key
 - [ ] Agent priority configuration per user
 
 ### Planned Improvements
-- [ ] Run detection during import, not just on modal open
+- [x] Run detection during import, not just on modal open (v0.3.6)
+- [x] Use AgentOrchestrator for detection (not just enrichment) (v0.3.6)
 - [ ] Batch API calls for multiple cards
 - [ ] Offline mode with cached data
 - [ ] User preferences for default content type per list
-- [ ] Use AgentOrchestrator for detection (not just enrichment)
 
 ### Performance Optimizations
 - [ ] Debounce detection on rapid modal opens
@@ -638,4 +766,4 @@ VITE_RAWG_API_KEY=your_rawg_key
 
 ---
 
-*Last updated: 2026-01-18 | Version: 0.3.4 (Agent Architecture)*
+*Last updated: 2026-01-19 | Version: 0.3.6 (Detect-Then-Enrich Pattern)*

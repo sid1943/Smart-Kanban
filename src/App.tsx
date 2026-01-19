@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useNewContentScanner } from './hooks/useNewContentScanner';
+import { enrichFromTMDb } from './engine/enrichment/tmdb';
+import { UpcomingContent } from './engine/types';
+import { getContentKindLabel, isUpcoming, getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
+import { getOrchestrator } from './engine/agents/AgentOrchestrator';
 import {
   DndContext,
   DragOverlay,
@@ -92,6 +97,14 @@ interface TaskItem {
   contentType?: ContentType;
   contentTypeConfidence?: number;
   contentTypeManual?: boolean; // true if user manually set it
+  hasNewContent?: boolean; // true if new seasons/content detected from API
+  upcomingContent?: UpcomingContent;
+  showStatus?: 'ongoing' | 'ended' | 'upcoming';
+  // Cached enrichment data (persisted to avoid re-fetching)
+  cachedEnrichment?: {
+    data: import('./engine/types').EnrichedData;
+    fetchedAt: string; // ISO timestamp
+  };
 }
 
 // User's personal info for smart task suggestions
@@ -1940,6 +1953,12 @@ function SortableColumn({
 }
 
 export default function App() {
+  // Track whether initial load from localStorage has completed
+  const [hasLoaded, setHasLoaded] = useState(false);
+  // Track whether enrichment data is being pre-fetched
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
+  const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0 });
+
   // Multi-goal state
   const [goals, setGoals] = useState<StoredGoal[]>([]);
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null);
@@ -2011,6 +2030,8 @@ export default function App() {
   const [trelloImportResult, setTrelloImportResult] = useState<TrelloImportResult | null>(null);
   const [trelloImportError, setTrelloImportError] = useState<string | null>(null);
   const [pendingImportGoal, setPendingImportGoal] = useState<StoredGoal | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, status: '' });
 
   // Workspace customization state
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces);
@@ -2162,10 +2183,12 @@ export default function App() {
         // ignore
       }
     }
+    setHasLoaded(true);
   }, []);
 
-  // Save data when it changes
+  // Save data when it changes (only after initial load to prevent overwriting)
   useEffect(() => {
+    if (!hasLoaded) return;
     localStorage.setItem('smart_task_hub_v3', JSON.stringify({
       goals,
       userInfo,
@@ -2175,7 +2198,108 @@ export default function App() {
       customProfileFields,
       calendarEvents,
     }));
-  }, [goals, userInfo, profileData, workspaces, customProfileCategories, customProfileFields, calendarEvents]);
+  }, [hasLoaded, goals, userInfo, profileData, workspaces, customProfileCategories, customProfileFields, calendarEvents]);
+
+  // Pre-fetch enrichment data for tasks that don't have it cached
+  useEffect(() => {
+    if (!hasLoaded) return;
+
+    const prefetchEnrichment = async () => {
+      // Find all tasks across all goals that need enrichment
+      const scannableTypes: ContentType[] = ['tv_series', 'anime', 'movie', 'book', 'game'];
+      const tasksNeedingEnrichment: { goalId: string; task: TaskItem }[] = [];
+
+      for (const goal of goals) {
+        for (const task of goal.tasks) {
+          if (
+            task.contentType &&
+            scannableTypes.includes(task.contentType) &&
+            !task.cachedEnrichment
+          ) {
+            tasksNeedingEnrichment.push({ goalId: goal.id, task });
+          }
+        }
+      }
+
+      if (tasksNeedingEnrichment.length === 0) return;
+
+      // Show loading state
+      setEnrichmentLoading(true);
+      setEnrichmentProgress({ current: 0, total: tasksNeedingEnrichment.length });
+
+      const agentOrchestrator = getOrchestrator();
+      const newContentOrchestrator = getNewContentOrchestrator();
+
+      // Pre-fetch all enrichment data
+      for (let i = 0; i < tasksNeedingEnrichment.length; i++) {
+        const { goalId, task } = tasksNeedingEnrichment[i];
+        setEnrichmentProgress({ current: i + 1, total: tasksNeedingEnrichment.length });
+
+        try {
+          const title = task.text.replace(/\s*\(\d{4}[^)]*\)\s*$/, '').trim();
+          const yearMatch = task.text.match(/\((\d{4})/);
+          const year = yearMatch ? yearMatch[1] : undefined;
+
+          const enrichedData = await agentOrchestrator.enrich(title, task.contentType!, year);
+
+          if (enrichedData) {
+            // Update the task with cached enrichment
+            setGoals(prev => prev.map(g => {
+              if (g.id !== goalId) return g;
+              return {
+                ...g,
+                tasks: g.tasks.map(t => {
+                  if (t.id !== task.id) return t;
+
+                  const updates: Partial<TaskItem> = {
+                    cachedEnrichment: {
+                      data: enrichedData,
+                      fetchedAt: new Date().toISOString(),
+                    },
+                  };
+
+                  // Also run new content detection
+                  const detectionResult = newContentOrchestrator.detect({
+                    taskId: task.id,
+                    title,
+                    contentType: task.contentType!,
+                    enrichedData,
+                    checklists: task.checklists?.map(cl => ({
+                      name: cl.name,
+                      items: cl.items.map(item => ({ text: item.text, checked: item.checked })),
+                    })) || [],
+                  });
+
+                  if (detectionResult.hasNewContent !== task.hasNewContent) {
+                    updates.hasNewContent = detectionResult.hasNewContent;
+                  }
+                  if (detectionResult.upcomingContent) {
+                    updates.upcomingContent = detectionResult.upcomingContent;
+                  }
+                  if (detectionResult.status) {
+                    updates.showStatus = detectionResult.status;
+                  }
+
+                  return { ...t, ...updates };
+                }),
+              };
+            }));
+          }
+
+          // Rate limiting
+          if (i < tasksNeedingEnrichment.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (error) {
+          console.error(`Error pre-fetching enrichment for task ${task.id}:`, error);
+        }
+      }
+
+      setEnrichmentLoading(false);
+    };
+
+    prefetchEnrichment();
+  }, [hasLoaded]); // Only run once after initial load
 
   // Function to check if a task matches user info or profile data
   const getTaskInfoMatch = (task: TaskItem): { matched: boolean; info?: UserInfoItem; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' } => {
@@ -2659,8 +2783,11 @@ export default function App() {
   // Trello import handler
   const handleTrelloImport = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        // Show importing screen immediately
+        setIsImporting(true);
+        setImportProgress({ current: 0, total: 0, status: 'Parsing Trello data...' });
         const content = e.target?.result as string;
         const data = JSON.parse(content) as TrelloBoard;
 
@@ -2847,10 +2974,12 @@ export default function App() {
             });
           });
 
+          // Auto-mark as done if all checklist items are complete
+          const isFullyComplete = checklistTotal > 0 && checklistChecked === checklistTotal;
           tasks.push({
             id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             text: card.name,
-            checked: card.dueComplete || false,
+            checked: card.dueComplete || isFullyComplete || false,
             category: categoryKey,
             description: card.desc || undefined,
             labels: taskLabels.length > 0 ? taskLabels : undefined,
@@ -2868,6 +2997,145 @@ export default function App() {
             links: extractedLinks.length > 0 ? extractedLinks : undefined,
           });
         });
+
+        // Enrich tasks with TMDb data for TV series/media cards
+        // Helper to extract year from title like "Show Name (2019- )"
+        const extractYear = (title: string): string | undefined => {
+          const match = title.match(/\((\d{4})/);
+          return match ? match[1] : undefined;
+        };
+
+        // Helper to clean title
+        const cleanTitle = (title: string): string => {
+          return title.replace(/\s*\(\d{4}[^)]*\)\s*$/, '').trim();
+        };
+
+        // Helper to count seasons in checklists
+        const countSeasonsInChecklists = (checklists: Checklist[]): number => {
+          let maxSeason = 0;
+          for (const checklist of checklists) {
+            if (checklist.name.toLowerCase().includes('season') ||
+                checklist.items.some(item => /season\s*\d+/i.test(item.text))) {
+              for (const item of checklist.items) {
+                const match = item.text.match(/season\s*(\d+)/i);
+                if (match) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxSeason) maxSeason = num;
+                }
+              }
+            }
+          }
+          return maxSeason;
+        };
+
+        // Detect content type for each task before enrichment
+        setImportProgress({ current: 0, total: tasks.length, status: 'Detecting content types...' });
+        const agentOrchestrator = getOrchestrator();
+
+        for (let i = 0; i < tasks.length; i++) {
+          const task = tasks[i];
+          try {
+            const detection = await agentOrchestrator.detect({
+              title: task.text,
+              description: task.description,
+              listContext: task.category,
+              urls: task.links?.map(l => l.url),
+              checklistNames: task.checklists?.map(cl => cl.name),
+            });
+
+            if (detection.type !== 'unknown' && detection.confidence >= 25) {
+              task.contentType = detection.type;
+              task.contentTypeConfidence = detection.confidence;
+            }
+          } catch (error) {
+            console.error(`Error detecting content type for task ${task.id}:`, error);
+          }
+
+          // Update progress every 5 tasks
+          if (i % 5 === 0) {
+            setImportProgress({ current: i + 1, total: tasks.length, status: 'Detecting content types...' });
+          }
+        }
+
+        // Find tasks that need enrichment (have a detected content type)
+        const scannableTypes: ContentType[] = ['tv_series', 'anime', 'movie', 'book', 'game'];
+        const tasksToEnrich = tasks.filter(task => {
+          // Must have a recognized content type
+          if (!task.contentType || !scannableTypes.includes(task.contentType)) {
+            return false;
+          }
+          // For TV/anime, must have checklists with season items
+          if (task.contentType === 'tv_series' || task.contentType === 'anime') {
+            if (!task.checklists || task.checklists.length === 0) return false;
+            return countSeasonsInChecklists(task.checklists) > 0;
+          }
+          // For movies, books, games - always enrich
+          return true;
+        });
+
+        setImportProgress({ current: 0, total: tasksToEnrich.length, status: 'Fetching content data...' });
+
+        const newContentOrchestrator = getNewContentOrchestrator();
+
+        // Helper to convert checklists to detection format
+        const toChecklistInfo = (checklists?: Checklist[]): ChecklistInfo[] => {
+          if (!checklists) return [];
+          return checklists.map(cl => ({
+            name: cl.name,
+            items: cl.items.map(item => ({ text: item.text, checked: item.checked })),
+          }));
+        };
+
+        // Enrich each task with appropriate API data
+        for (let i = 0; i < tasksToEnrich.length; i++) {
+          const task = tasksToEnrich[i];
+          setImportProgress({
+            current: i + 1,
+            total: tasksToEnrich.length,
+            status: `Loading: ${cleanTitle(task.text).substring(0, 30)}...`
+          });
+
+          try {
+            const title = cleanTitle(task.text);
+            const year = extractYear(task.text);
+
+            // Use AgentOrchestrator to enrich based on content type
+            const enrichedData = await agentOrchestrator.enrich(title, task.contentType!, year);
+
+            if (enrichedData) {
+              // Cache the enrichment data
+              task.cachedEnrichment = {
+                data: enrichedData,
+                fetchedAt: new Date().toISOString(),
+              };
+
+              // Use NewContentOrchestrator to detect new content
+              const detectionResult = newContentOrchestrator.detect({
+                taskId: task.id,
+                title,
+                contentType: task.contentType!,
+                enrichedData,
+                checklists: toChecklistInfo(task.checklists),
+              });
+
+              // Update task with detection results
+              task.hasNewContent = detectionResult.hasNewContent;
+              task.showStatus = detectionResult.status;
+              if (detectionResult.upcomingContent) {
+                task.upcomingContent = detectionResult.upcomingContent;
+              }
+            }
+
+            // Small delay to not overwhelm API
+            if (i < tasksToEnrich.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
+          } catch (error) {
+            console.error(`Error enriching task ${task.id}:`, error);
+          }
+        }
+
+        setImportProgress({ current: tasksToEnrich.length, total: tasksToEnrich.length, status: 'Finalizing import...' });
 
         // Smart board type detection based on board name and content
         const boardNameLower = (data.name || '').toLowerCase();
@@ -2993,11 +3261,13 @@ export default function App() {
           linksExtracted: totalLinks,
         });
         setTrelloImportError(null);
+        setIsImporting(false);
         setShowTrelloImportModal(true);
 
       } catch (err) {
         setTrelloImportError('Failed to parse Trello export file. Please make sure it\'s a valid JSON file exported from Trello.');
         setTrelloImportResult(null);
+        setIsImporting(false);
         setShowTrelloImportModal(true);
       }
     };
@@ -3118,7 +3388,7 @@ export default function App() {
   };
 
   // Edit an existing task
-  const handleEditTask = (taskId: string, updates: Partial<TaskItem>) => {
+  const handleEditTask = useCallback((taskId: string, updates: Partial<TaskItem>) => {
     if (!activeGoalId) return;
     setGoals(prev => prev.map(goal => {
       if (goal.id === activeGoalId) {
@@ -3131,7 +3401,14 @@ export default function App() {
       }
       return goal;
     }));
-  };
+  }, [activeGoalId]);
+
+  // Background scanner for new content (seasons, etc.)
+  const { scanning: contentScanning, scannedCount, totalToScan, rescan: rescanContent } = useNewContentScanner(
+    activeGoal?.tasks || [],
+    handleEditTask,
+    !!activeGoalId && viewMode === 'tasks' // Only scan when viewing tasks
+  );
 
   // Add item to a checklist
   const handleAddChecklistItem = (taskId: string, checklistId: string, text: string) => {
@@ -3192,10 +3469,14 @@ export default function App() {
                 }
                 return cl;
               });
+              const newChecklistChecked = (task.checklistChecked || 0) + checkedDelta;
+              const isFullyComplete = task.checklistTotal && newChecklistChecked === task.checklistTotal;
               return {
                 ...task,
                 checklists: updatedChecklists,
-                checklistChecked: (task.checklistChecked || 0) + checkedDelta,
+                checklistChecked: newChecklistChecked,
+                // Auto-mark card as done when all checklist items are complete
+                ...(isFullyComplete && !task.checked ? { checked: true } : {}),
               };
             }
             return task;
@@ -3783,6 +4064,36 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Importing Progress Modal */}
+          {isImporting && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+              <div className="bg-[#1a1f26] rounded-xl w-full max-w-sm shadow-2xl p-8 text-center">
+                {/* Spinning loader */}
+                <div className="mb-6 flex justify-center">
+                  <div className="w-16 h-16 border-4 border-[#3d444d] border-t-[#579dff] rounded-full animate-spin"></div>
+                </div>
+
+                <h2 className="text-xl font-semibold text-white mb-2">Importing Board</h2>
+                <p className="text-[#9fadbc] text-sm mb-6">{importProgress.status}</p>
+
+                {/* Progress bar */}
+                {importProgress.total > 0 && (
+                  <div className="space-y-2">
+                    <div className="h-2 bg-[#22272b] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#579dff] transition-all duration-300"
+                        style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-[#9fadbc] text-xs">
+                      {importProgress.current} / {importProgress.total} cards enriched
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -5175,6 +5486,50 @@ export default function App() {
     groupedTasks[cat].push(task);
   });
 
+  // Sort tasks: hasNewContent cards first, then by position
+  Object.keys(groupedTasks).forEach(cat => {
+    groupedTasks[cat].sort((a, b) => {
+      // hasNewContent cards come first
+      if (a.hasNewContent && !b.hasNewContent) return -1;
+      if (!a.hasNewContent && b.hasNewContent) return 1;
+      // Then by position
+      return (a.position || 0) - (b.position || 0);
+    });
+  });
+
+  // Show loading screen while pre-fetching enrichment data
+  if (enrichmentLoading) {
+    return (
+      <div
+        className="min-h-screen bg-cover bg-center bg-fixed flex items-center justify-center"
+        style={{
+          backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0.8)),
+                           url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80')`,
+        }}
+      >
+        <div className="text-center">
+          <div className="mb-4">
+            <svg className="w-12 h-12 animate-spin mx-auto text-white/70" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">Loading Content Data</h2>
+          <p className="text-white/60 mb-4">Fetching details for your cards...</p>
+          <div className="text-white/80 font-mono">
+            {enrichmentProgress.current} / {enrichmentProgress.total}
+          </div>
+          <div className="mt-4 w-64 mx-auto bg-white/20 rounded-full h-2">
+            <div
+              className="bg-accent h-2 rounded-full transition-all duration-300"
+              style={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-cover bg-center bg-fixed"
@@ -5195,9 +5550,26 @@ export default function App() {
             </svg>
             Home
           </button>
-          <h1 className="text-lg font-bold text-white">
-            {getGoalEmoji(activeGoal?.type || '')} {activeGoal?.goal}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold text-white">
+              {getGoalEmoji(activeGoal?.type || '')} {activeGoal?.goal}
+            </h1>
+            <button
+              onClick={rescanContent}
+              disabled={contentScanning}
+              className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full transition-all ${
+                contentScanning
+                  ? 'text-white/30 bg-white/5 cursor-not-allowed'
+                  : 'text-white/60 hover:text-white bg-white/5 hover:bg-white/10'
+              }`}
+              title={contentScanning ? `Scanning ${scannedCount}/${totalToScan}...` : 'Check for new seasons'}
+            >
+              <svg className={`w-3 h-3 ${contentScanning ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {contentScanning ? '' : 'Refresh'}
+            </button>
+          </div>
           <button
             onClick={() => handleDeleteGoal(activeGoalId!)}
             className="p-2 text-white/50 hover:text-red-400 hover:bg-white/10 rounded transition-all"
@@ -5245,8 +5617,12 @@ export default function App() {
                       <div
                         key={task.id}
                         onClick={() => setSelectedTaskId(task.id)}
-                        className={`bg-[#22272b] rounded-lg px-3 py-2 shadow-sm hover:bg-[#2c323a] cursor-pointer
-                                   transition-all ${task.checked ? 'opacity-60' : ''}`}
+                        className={`rounded-lg px-3 py-2 shadow-sm cursor-pointer transition-all
+                          ${task.hasNewContent
+                            ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
+                            : 'bg-[#22272b] hover:bg-[#2c323a]'
+                          }
+                          ${task.checked ? 'opacity-60' : ''}`}
                       >
                         <div className="flex-1 min-w-0">
                           {/* Labels */}
@@ -5276,7 +5652,35 @@ export default function App() {
                               })}
                             </div>
                           )}
-                          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
+                            {task.hasNewContent && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
+                                {task.upcomingContent
+                                  ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
+                                  : 'NEW'}
+                              </span>
+                            )}
+                            {task.showStatus === 'ongoing' && !task.hasNewContent && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
+                                Returning
+                              </span>
+                            )}
+                            {task.showStatus === 'ended' && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
+                                Ended
+                              </span>
+                            )}
+                          </div>
+                          {/* Upcoming content date */}
+                          {task.upcomingContent && (
+                            <div className="text-[10px] text-amber-400 mt-0.5">
+                              {task.upcomingContent.title}
+                              {task.upcomingContent.releaseDate && (
+                                <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+                              )}
+                            </div>
+                          )}
                           {/* Checklist progress */}
                           {task.checklistTotal && task.checklistTotal > 0 && (
                             <div className="flex items-center gap-1.5 mt-1">
