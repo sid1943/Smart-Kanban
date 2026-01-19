@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNewContentScanner } from './hooks/useNewContentScanner';
 import { enrichFromTMDb } from './engine/enrichment/tmdb';
 import { UpcomingContent } from './engine/types';
@@ -1993,6 +1993,40 @@ export default function App() {
   }>>({});
   const [activeProfileCategory, setActiveProfileCategory] = useState<string>('travel');
 
+  // Ref for horizontal scroll containers
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const taskBoardScrollRef = useRef<HTMLDivElement>(null);
+
+  // Enable horizontal scroll with mouse wheel
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.currentTarget as HTMLDivElement;
+      if (target && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        target.scrollLeft += e.deltaY;
+      }
+    };
+
+    const boardEl = boardScrollRef.current;
+    const taskBoardEl = taskBoardScrollRef.current;
+
+    if (boardEl) {
+      boardEl.addEventListener('wheel', handleWheel, { passive: false });
+    }
+    if (taskBoardEl) {
+      taskBoardEl.addEventListener('wheel', handleWheel, { passive: false });
+    }
+
+    return () => {
+      if (boardEl) {
+        boardEl.removeEventListener('wheel', handleWheel);
+      }
+      if (taskBoardEl) {
+        taskBoardEl.removeEventListener('wheel', handleWheel);
+      }
+    };
+  }, [viewMode, activeGoalId]);
+
   // Form state for creating new goals
   const [formState, setFormState] = useState<{
     goalType: string | null;
@@ -2063,7 +2097,10 @@ export default function App() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        // Require both distance AND delay to prevent accidental drags on click
+        distance: 10,
+        delay: 150,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -5287,7 +5324,7 @@ export default function App() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
+          <div ref={boardScrollRef} className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
             <div className="flex gap-3 items-start h-full">
               <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                 {visibleColumns.map(column => {
@@ -5582,7 +5619,7 @@ export default function App() {
       </div>
 
       {/* Kanban-style board layout */}
-      <div className="p-3 overflow-x-auto h-[calc(100vh-60px)]">
+      <div ref={taskBoardScrollRef} className="p-3 overflow-x-auto h-[calc(100vh-60px)]">
         <div className="flex gap-3 items-start h-full">
           {Object.entries(groupedTasks).map(([category, tasks]) => {
             // Get display name for category
