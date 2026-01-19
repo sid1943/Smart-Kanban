@@ -54,6 +54,15 @@ All notable changes to Smart Kanban will be documented in this file.
   - The background scanner (`useNewContentScanner`) is now the authoritative source for `hasNewContent`
   - Clicking cards no longer changes their position or removes their amber styling
 
+- **Stable Card Sorting**: Cards no longer shuffle randomly on re-renders
+  - Added `useMemo` to cache grouped/sorted tasks
+  - Added original index as tiebreaker for stable sort
+  - Prevents cards from changing position unexpectedly
+
+- **Click-and-Drag Horizontal Scroll**: Boards now support horizontal scrolling by click-and-drag
+  - Hold mouse button and drag left/right to scroll board columns
+  - Prevents accidental drags when clicking cards
+
 - **Data Persistence Race Condition**: Fixed a bug where refreshing the app could lose all data
   - Added `hasLoaded` flag to prevent save effect from running before load completes
   - Ensures localStorage is not overwritten with empty state during initial mount

@@ -90,11 +90,22 @@ Future improvements and features to be added.
 
 ## Bugs & Technical Debt
 
+### Code Quality
 - [ ] Handle localStorage quota exceeded gracefully
 - [ ] Add error boundaries to all major components
 - [ ] Optimize re-renders in task list
 - [ ] Add unit tests for core functions
 - [ ] Add E2E tests with Playwright/Cypress
+- [ ] **Consolidate duplicate type definitions** - `TaskItem`, `Checklist`, `ChecklistItem` duplicated in App.tsx, TaskDetailModal.tsx, useNewContentScanner.ts
+  - Create shared types in `src/types/index.ts`
+- [ ] Add JSDoc comments to complex functions
+- [ ] Remove hardcoded TMDb fallback API key (security concern)
+
+### Error Handling
+- [ ] Add retry logic with exponential backoff for API calls
+- [ ] Show user-facing error messages for API failures
+- [ ] Add offline mode indication (disable enrichment when offline)
+- [ ] Validate API keys on settings save (not just prefix check)
 
 ### Content Scanner Performance (High Priority)
 - [ ] **Reduce initial loading time** - Scanner currently blocks perceived load
@@ -119,6 +130,18 @@ Future improvements and features to be added.
 - [ ] Fix memory leak - clean up callback maps after task completion (completionCallbacks/errorCallbacks grow indefinitely)
 - [ ] Add backpressure mechanism with getQueuePressure() method (no feedback when queue overwhelmed)
 - [ ] Add periodic cleanup interval for completed tasks (only cleans on queue full)
+
+### Worker Infrastructure (Unused/Incomplete)
+- [ ] Integrate `useBackgroundEnrichment` hook - implemented but not used in App.tsx
+- [ ] Enable WorkerPool auto-scaling - currently only creates minimum workers, never scales up
+- [ ] Use MessageBus for queue status updates to UI
+- [ ] Document worker pool auto-scaling behavior
+
+### Edge Cases & Bugs
+- [ ] Fix year extraction regex - "Watch in 2024 - Breaking Bad (2008)" extracts wrong year
+- [ ] Add `contentType !== 'unknown'` check in `isScannableTask()`
+- [ ] Consider multiple signals for low-frequency keywords to reduce false positives
+- [ ] Handle cache invalidation when task content type changes
 
 ---
 
@@ -161,6 +184,32 @@ Future improvements and features to be added.
 - [ ] Offline mode with cached data
 - [x] Generalized new content detection for all content types (v0.3.6)
 
+### Cache Management
+- [ ] Cache management UI (clear cache, view cache size)
+- [ ] Cache statistics per content type
+- [ ] Automatic old data cleanup (LRU eviction)
+- [ ] Cache TTL configuration in settings
+
+---
+
+## Accessibility & Polish
+
+- [ ] Keyboard navigation for card selection/movement
+- [ ] Screen reader hints for drag-drop operations
+- [ ] Focus management when modals open/close
+- [ ] ARIA labels for all interactive elements
+- [ ] High contrast mode support
+- [ ] Reduce motion option for animations
+
+---
+
+## Performance Monitoring
+
+- [ ] Queue statistics dashboard
+- [ ] API rate limit status display
+- [ ] Worker pool health monitoring
+- [ ] Build size analysis and budget
+
 ---
 
 ## Completed
@@ -182,8 +231,11 @@ Future improvements and features to be added.
 - [x] On-demand data fetching with caching (v0.3.0)
 - [x] Content type detection during import - Detect-Then-Enrich pattern (v0.3.6)
 - [x] Enrichment data caching on tasks (v0.3.6)
-- [x] Pre-load enrichment before board display (v0.3.6)
 - [x] Architecture documentation for import patterns (v0.3.6)
+- [x] Fixed card moving to bottom on click (v0.3.6)
+- [x] Removed pre-load enrichment screen (was causing refresh delays) (v0.3.6)
+- [x] Stable card sorting with original index tiebreaker (v0.3.6)
+- [x] Click-and-drag horizontal scroll for boards (v0.3.6)
 
 ---
 
