@@ -41,14 +41,12 @@ All notable changes to Smart Kanban will be documented in this file.
   - Uses cached data when available (skips API call, no rate limiting delay)
   - Only fetches from API for tasks without cached data
 
-- **Pre-Load Enrichment Screen**
-  - On app load, checks all tasks for missing cached enrichment
-  - Shows full-screen loading UI with progress bar while fetching
-  - Fetches and caches data BEFORE showing the board
-  - Once complete, all card opens are instant - no loading spinners
-  - Progress shows "X / Y" with animated progress bar
-
 ### Fixed
+
+- **Removed Pre-Load Enrichment Screen**: Removed the "Loading Content Data" screen that appeared on every refresh
+  - The pre-fetch was redundant since the background scanner already caches enrichment data
+  - Had closure issues causing it to run on every refresh regardless of cache state
+  - Board now loads instantly without blocking on enrichment pre-fetch
 
 - **Data Persistence Race Condition**: Fixed a bug where refreshing the app could lose all data
   - Added `hasLoaded` flag to prevent save effect from running before load completes

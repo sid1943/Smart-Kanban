@@ -1961,9 +1961,6 @@ function SortableColumn({
 export default function App() {
   // Track whether initial load from localStorage has completed
   const [hasLoaded, setHasLoaded] = useState(false);
-  // Track whether enrichment data is being pre-fetched
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
-  const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0 });
 
   // Multi-goal state
   const [goals, setGoals] = useState<StoredGoal[]>([]);
@@ -2210,106 +2207,6 @@ export default function App() {
     }));
   }, [hasLoaded, goals, userInfo, profileData, workspaces, customProfileCategories, customProfileFields, calendarEvents]);
 
-  // Pre-fetch enrichment data for tasks that don't have it cached
-  useEffect(() => {
-    if (!hasLoaded) return;
-
-    const prefetchEnrichment = async () => {
-      // Find all tasks across all goals that need enrichment
-      const scannableTypes: ContentType[] = ['tv_series', 'anime', 'movie', 'book', 'game'];
-      const tasksNeedingEnrichment: { goalId: string; task: TaskItem }[] = [];
-
-      for (const goal of goals) {
-        for (const task of goal.tasks) {
-          if (
-            task.contentType &&
-            scannableTypes.includes(task.contentType) &&
-            !task.cachedEnrichment
-          ) {
-            tasksNeedingEnrichment.push({ goalId: goal.id, task });
-          }
-        }
-      }
-
-      if (tasksNeedingEnrichment.length === 0) return;
-
-      // Show loading state
-      setEnrichmentLoading(true);
-      setEnrichmentProgress({ current: 0, total: tasksNeedingEnrichment.length });
-
-      const agentOrchestrator = getOrchestrator();
-      const newContentOrchestrator = getNewContentOrchestrator();
-
-      // Pre-fetch all enrichment data
-      for (let i = 0; i < tasksNeedingEnrichment.length; i++) {
-        const { goalId, task } = tasksNeedingEnrichment[i];
-        setEnrichmentProgress({ current: i + 1, total: tasksNeedingEnrichment.length });
-
-        try {
-          const title = task.text.replace(/\s*\(\d{4}[^)]*\)\s*$/, '').trim();
-          const yearMatch = task.text.match(/\((\d{4})/);
-          const year = yearMatch ? yearMatch[1] : undefined;
-
-          const enrichedData = await agentOrchestrator.enrich(title, task.contentType!, year);
-
-          if (enrichedData) {
-            // Update the task with cached enrichment
-            setGoals(prev => prev.map(g => {
-              if (g.id !== goalId) return g;
-              return {
-                ...g,
-                tasks: g.tasks.map(t => {
-                  if (t.id !== task.id) return t;
-
-                  const updates: Partial<TaskItem> = {
-                    cachedEnrichment: {
-                      data: enrichedData,
-                      fetchedAt: new Date().toISOString(),
-                    },
-                  };
-
-                  // Also run new content detection
-                  const detectionResult = newContentOrchestrator.detect({
-                    taskId: task.id,
-                    title,
-                    contentType: task.contentType!,
-                    enrichedData,
-                    checklists: task.checklists?.map(cl => ({
-                      name: cl.name,
-                      items: cl.items.map(item => ({ text: item.text, checked: item.checked })),
-                    })) || [],
-                  });
-
-                  if (detectionResult.hasNewContent !== task.hasNewContent) {
-                    updates.hasNewContent = detectionResult.hasNewContent;
-                  }
-                  if (detectionResult.upcomingContent) {
-                    updates.upcomingContent = detectionResult.upcomingContent;
-                  }
-                  if (detectionResult.status) {
-                    updates.showStatus = detectionResult.status;
-                  }
-
-                  return { ...t, ...updates };
-                }),
-              };
-            }));
-          }
-
-          // Rate limiting
-          if (i < tasksNeedingEnrichment.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-        } catch (error) {
-          console.error(`Error pre-fetching enrichment for task ${task.id}:`, error);
-        }
-      }
-
-      setEnrichmentLoading(false);
-    };
-
-    prefetchEnrichment();
-  }, [hasLoaded]); // Only run once after initial load
 
   // Function to check if a task matches user info or profile data
   const getTaskInfoMatch = (task: TaskItem): { matched: boolean; info?: UserInfoItem; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' } => {
@@ -5548,39 +5445,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading screen while pre-fetching enrichment data
-  if (enrichmentLoading) {
-    return (
-      <div
-        className="min-h-screen bg-cover bg-center bg-fixed flex items-center justify-center"
-        style={{
-          backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0.8)),
-                           url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80')`,
-        }}
-      >
-        <div className="text-center">
-          <div className="mb-4">
-            <svg className="w-12 h-12 animate-spin mx-auto text-white/70" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-white mb-2">Loading Content Data</h2>
-          <p className="text-white/60 mb-4">Fetching details for your cards...</p>
-          <div className="text-white/80 font-mono">
-            {enrichmentProgress.current} / {enrichmentProgress.total}
-          </div>
-          <div className="mt-4 w-64 mx-auto bg-white/20 rounded-full h-2">
-            <div
-              className="bg-accent h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
-            />
           </div>
         </div>
       </div>
