@@ -19,6 +19,8 @@ export interface OrchestratorConfig {
   parallel: boolean;
   // Enable/disable specific agents
   enabledAgents?: ContentType[];
+  // Enable background mode with Web Workers
+  backgroundMode?: boolean;
 }
 
 // Result from orchestrator detection
@@ -31,15 +33,70 @@ export interface OrchestratorDetectionResult extends DetectionResult {
 const DEFAULT_CONFIG: OrchestratorConfig = {
   confidenceThreshold: 25,
   parallel: true,
+  backgroundMode: false,
 };
 
 export class AgentOrchestrator {
   private agents: BaseAgent[] = [];
   private config: OrchestratorConfig;
+  private backgroundModeEnabled = false;
+  private workerCoordinator: import('../workers/coordinator/TaskCoordinator').TaskCoordinator | null = null;
 
   constructor(config?: Partial<OrchestratorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.initializeAgents();
+
+    // Initialize background mode if enabled
+    if (this.config.backgroundMode) {
+      this.enableBackgroundMode();
+    }
+  }
+
+  /**
+   * Enable background mode with Web Workers
+   */
+  async enableBackgroundMode(): Promise<void> {
+    if (this.backgroundModeEnabled) return;
+
+    try {
+      const { initializeTaskCoordinator } = await import('../workers/coordinator/TaskCoordinator');
+      this.workerCoordinator = await initializeTaskCoordinator({
+        confidenceThreshold: this.config.confidenceThreshold,
+      });
+      this.backgroundModeEnabled = true;
+      console.log('[Orchestrator] Background mode enabled');
+    } catch (error) {
+      console.error('[Orchestrator] Failed to enable background mode:', error);
+      this.backgroundModeEnabled = false;
+    }
+  }
+
+  /**
+   * Disable background mode
+   */
+  async disableBackgroundMode(): Promise<void> {
+    if (!this.backgroundModeEnabled) return;
+
+    if (this.workerCoordinator) {
+      await this.workerCoordinator.shutdown();
+      this.workerCoordinator = null;
+    }
+    this.backgroundModeEnabled = false;
+    console.log('[Orchestrator] Background mode disabled');
+  }
+
+  /**
+   * Check if background mode is enabled
+   */
+  isBackgroundModeEnabled(): boolean {
+    return this.backgroundModeEnabled;
+  }
+
+  /**
+   * Get the worker coordinator (for advanced usage)
+   */
+  getWorkerCoordinator(): import('../workers/coordinator/TaskCoordinator').TaskCoordinator | null {
+    return this.workerCoordinator;
   }
 
   // Initialize all agents
@@ -205,6 +262,84 @@ export class AgentOrchestrator {
     const data = await this.enrich(cleanTitle, detection.type, year);
 
     return { detection, data };
+  }
+
+  /**
+   * Submit for background processing (requires background mode)
+   * Returns a task ID for tracking
+   */
+  submitForBackground(
+    cardId: string,
+    context: DetectionContext,
+    priority: 'high' | 'normal' | 'low' = 'normal'
+  ): string {
+    if (!this.workerCoordinator) {
+      throw new Error('Background mode is not enabled');
+    }
+
+    return this.workerCoordinator.submitCard(
+      cardId,
+      context.title,
+      context.description,
+      context.listContext,
+      context.urls,
+      context.checklistNames,
+      priority
+    );
+  }
+
+  /**
+   * Wait for background task completion
+   */
+  async waitForBackground(cardId: string, timeoutMs?: number): Promise<{
+    success: boolean;
+    detection?: DetectionResult;
+    data?: EnrichedData;
+    error?: string;
+  }> {
+    if (!this.workerCoordinator) {
+      throw new Error('Background mode is not enabled');
+    }
+
+    const result = await this.workerCoordinator.waitForCard(cardId, timeoutMs);
+    return {
+      success: result.success,
+      detection: result.detection,
+      data: result.data,
+      error: result.error,
+    };
+  }
+
+  /**
+   * Subscribe to background task updates
+   */
+  onBackgroundComplete(
+    cardId: string,
+    callback: (data: EnrichedData, detection: DetectionResult) => void
+  ): () => void {
+    if (!this.workerCoordinator) {
+      throw new Error('Background mode is not enabled');
+    }
+
+    return this.workerCoordinator.onComplete(cardId, (id, data, detection) => {
+      callback(data, detection);
+    });
+  }
+
+  /**
+   * Get background mode statistics
+   */
+  getBackgroundStats(): {
+    queue: ReturnType<import('../workers/coordinator/TaskCoordinator').TaskCoordinator['getStats']>['queue'];
+    pool: ReturnType<import('../workers/coordinator/TaskCoordinator').TaskCoordinator['getStats']>['pool'];
+  } | null {
+    if (!this.workerCoordinator) return null;
+
+    const stats = this.workerCoordinator.getStats();
+    return {
+      queue: stats.queue,
+      pool: stats.pool,
+    };
   }
 }
 

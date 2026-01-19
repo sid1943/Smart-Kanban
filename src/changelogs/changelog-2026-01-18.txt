@@ -1,0 +1,81 @@
+================================================================================
+SMART KANBAN - CHANGELOG
+Date: 2026-01-18
+================================================================================
+
+VERSION 0.3.5 - Collapsible & Searchable Checklists + Worker Infrastructure
+--------------------------------------------------------------------------------
+
+[NEW] Collapsible Checklists
+- Each checklist section can now be collapsed/expanded
+- Click the checklist header to toggle visibility
+- Arrow icon rotates to indicate expand/collapse state
+- Mini progress bar visible even when collapsed
+- "Expand All" / "Collapse All" button to toggle all checklists at once
+
+[NEW] Searchable Checklists
+- Search input field at the top of checklists section
+- Filter items across all checklists in real-time as you type
+- Clear button (X) to reset search
+- Search match highlighting in yellow
+- Shows "X of Y items" count when filtering
+- Checklists with no matching items are hidden during search
+
+[NEW] Worker Infrastructure (Background Processing)
+- TaskCoordinator: Orchestrates background task execution
+- WorkerPool: Manages 2-4 Web Workers with auto-scaling
+- TaskQueue: Priority queue with high/normal/low levels
+- RateLimiter: Per-API rate limiting (TMDb, OMDb, Jikan, RAWG, OpenLibrary)
+- MessageBus: Pub/sub messaging between workers and main thread
+- useBackgroundEnrichment hook: React integration for background processing
+
+[NEW] AgentOrchestrator Background Mode
+- enableBackgroundMode() / disableBackgroundMode() methods
+- submitForBackground() - Submit cards for async processing
+- waitForBackground() - Await task completion with Promise
+- onBackgroundComplete() - Subscribe to completion events
+- getBackgroundStats() - Get queue and pool statistics
+
+[NEW] CLAUDE.md Configuration
+- Post-implementation steps documented
+- Type check and build verification instructions
+- Documentation update guidelines
+- Commit message conventions
+- Project structure overview
+
+[ADDED TO TODO] Worker Traffic Optimization (High Priority)
+- Replace polling-based processing with event-driven approach
+- Optimize TaskQueue with heap/priority queue data structure
+- Integrate RateLimiter with task dispatch
+- Fix memory leak in callback maps
+- Add backpressure mechanism
+- Add periodic cleanup interval for completed tasks
+
+--------------------------------------------------------------------------------
+
+FILES MODIFIED:
+- src/components/TaskDetailModal.tsx (collapsible + searchable checklists)
+- src/engine/agents/AgentOrchestrator.ts (background mode support)
+- src/engine/index.ts (new exports)
+- src/hooks/index.ts (new exports)
+- TODO.md (added optimization tasks, marked checklists complete)
+- CHANGELOG.md (updated)
+
+FILES ADDED:
+- CLAUDE.md (Claude Code instructions)
+- src/changelogs/changelog-2026-01-18.txt (this file)
+- src/engine/workers/coordinator/TaskCoordinator.ts
+- src/engine/workers/coordinator/TaskQueue.ts
+- src/engine/workers/coordinator/RateLimiter.ts
+- src/engine/workers/pool/WorkerPool.ts
+- src/engine/workers/pool/AgentWorker.ts
+- src/engine/workers/pool/agentWorker.worker.ts
+- src/engine/workers/messaging/MessageBus.ts
+- src/engine/workers/messaging/types.ts
+- src/engine/workers/conflict/ConflictResolver.ts
+- src/engine/workers/validation/ValidationPipeline.ts
+- src/engine/workers/index.ts
+- src/hooks/useBackgroundEnrichment.ts
+- src/components/WorkerStatus.tsx
+
+================================================================================

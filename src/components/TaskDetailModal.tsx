@@ -77,6 +77,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [newChecklistItemText, setNewChecklistItemText] = useState('');
   const [linksExpanded, setLinksExpanded] = useState(false);
   const [showTypePicker, setShowTypePicker] = useState(false);
+  // Checklist state - collapsible and searchable
+  const [collapsedChecklists, setCollapsedChecklists] = useState<Set<string>>(new Set());
+  const [checklistSearch, setChecklistSearch] = useState('');
 
   // Fetch enriched data - pass stored content type if available
   const { detection, data: enrichedData, loading: enrichLoading, needsUserInput, suggestedTypes } = useContentEnrichment({
@@ -564,89 +567,196 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             )}
           </div>
 
-          {/* Checklists */}
+          {/* Checklists - Collapsible & Searchable */}
           {task.checklists && task.checklists.length > 0 && (
             <div className="mb-6">
+              {/* Checklist Search & Controls */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1 relative">
+                  <svg
+                    className="w-4 h-4 text-[#6b7280] absolute left-3 top-1/2 -translate-y-1/2"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={checklistSearch}
+                    onChange={(e) => setChecklistSearch(e.target.value)}
+                    placeholder="Search checklists..."
+                    className="w-full bg-[#22272b] border border-[#3d444d] rounded-lg pl-9 pr-3 py-2 text-white text-sm
+                             placeholder-[#6b7280] focus:outline-none focus:border-accent transition-all"
+                  />
+                  {checklistSearch && (
+                    <button
+                      onClick={() => setChecklistSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6b7280] hover:text-white p-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {/* Expand/Collapse All */}
+                <button
+                  onClick={() => {
+                    if (collapsedChecklists.size === task.checklists!.length) {
+                      setCollapsedChecklists(new Set());
+                    } else {
+                      setCollapsedChecklists(new Set(task.checklists!.map(c => c.id)));
+                    }
+                  }}
+                  className="px-3 py-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded-lg text-xs transition-all"
+                  title={collapsedChecklists.size === task.checklists.length ? 'Expand all' : 'Collapse all'}
+                >
+                  {collapsedChecklists.size === task.checklists.length ? 'Expand All' : 'Collapse All'}
+                </button>
+              </div>
+
               {task.checklists.map(checklist => {
+                const isCollapsed = collapsedChecklists.has(checklist.id);
                 const checkedCount = checklist.items.filter(i => i.checked).length;
                 const totalCount = checklist.items.length;
                 const percentage = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
+                // Filter items based on search
+                const searchLower = checklistSearch.toLowerCase();
+                const filteredItems = checklistSearch
+                  ? checklist.items.filter(item => item.text.toLowerCase().includes(searchLower))
+                  : checklist.items;
+
+                // Skip checklist if search active and no matches
+                if (checklistSearch && filteredItems.length === 0) {
+                  return null;
+                }
+
                 return (
-                  <div key={checklist.id} className="mb-4">
-                    <div className="flex items-center gap-2 mb-2">
+                  <div key={checklist.id} className="mb-4 bg-[#22272b] rounded-lg overflow-hidden">
+                    {/* Checklist Header - Clickable to collapse */}
+                    <button
+                      onClick={() => {
+                        const newCollapsed = new Set(collapsedChecklists);
+                        if (isCollapsed) {
+                          newCollapsed.delete(checklist.id);
+                        } else {
+                          newCollapsed.add(checklist.id);
+                        }
+                        setCollapsedChecklists(newCollapsed);
+                      }}
+                      className="w-full flex items-center gap-2 p-3 hover:bg-[#2a3038] transition-all"
+                    >
+                      <svg
+                        className={`w-4 h-4 text-[#9fadbc] transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                       <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                       </svg>
-                      <h4 className="text-[#b6c2cf] font-semibold flex-1">{checklist.name}</h4>
+                      <h4 className="text-[#b6c2cf] font-semibold flex-1 text-left">{checklist.name}</h4>
                       <span className="text-[#9fadbc] text-sm">{checkedCount}/{totalCount}</span>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="h-2 bg-[#22272b] rounded-full mb-3 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${percentage === 100 ? 'bg-green-500' : 'bg-accent'}`}
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-
-                    {/* Items */}
-                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                      {checklist.items.map(item => (
+                      {/* Mini progress indicator */}
+                      <div className="w-16 h-1.5 bg-[#1a1f26] rounded-full overflow-hidden">
                         <div
-                          key={item.id}
-                          onClick={() => onToggleChecklistItem(task.id, checklist.id, item.id)}
-                          className={`flex items-center gap-2 p-2 rounded hover:bg-[#22272b] cursor-pointer transition-all
-                                    ${item.checked ? 'opacity-60' : ''}`}
-                        >
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
-                                        ${item.checked ? 'bg-accent border-accent' : 'border-[#5a6370]'}`}>
-                            {item.checked && (
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <span className={`text-sm ${item.checked ? 'line-through text-[#6b7280]' : 'text-[#9fadbc]'}`}>
-                            {item.text}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Add item */}
-                    {addingChecklistItem === checklist.id ? (
-                      <div className="mt-2">
-                        <input
-                          type="text"
-                          value={newChecklistItemText}
-                          onChange={(e) => setNewChecklistItemText(e.target.value)}
-                          placeholder="Add an item..."
-                          autoFocus
-                          className="w-full bg-[#22272b] border border-[#5a6370] rounded px-3 py-2 text-white text-sm
-                                   focus:outline-none focus:border-accent"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && newChecklistItemText.trim()) {
-                              onAddChecklistItem(task.id, checklist.id, newChecklistItemText.trim());
-                              setNewChecklistItemText('');
-                            }
-                            if (e.key === 'Escape') {
-                              setAddingChecklistItem(null);
-                              setNewChecklistItemText('');
-                            }
-                          }}
+                          className={`h-full rounded-full transition-all ${percentage === 100 ? 'bg-green-500' : 'bg-accent'}`}
+                          style={{ width: `${percentage}%` }}
                         />
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => setAddingChecklistItem(checklist.id)}
-                        className="mt-2 text-[#9fadbc] text-sm hover:text-white flex items-center gap-1"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Add an item
-                      </button>
+                    </button>
+
+                    {/* Collapsible Content */}
+                    {!isCollapsed && (
+                      <div className="px-3 pb-3">
+                        {/* Progress bar */}
+                        <div className="h-2 bg-[#1a1f26] rounded-full mb-3 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${percentage === 100 ? 'bg-green-500' : 'bg-accent'}`}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+
+                        {/* Search results indicator */}
+                        {checklistSearch && (
+                          <div className="text-xs text-[#6b7280] mb-2">
+                            Showing {filteredItems.length} of {totalCount} items
+                          </div>
+                        )}
+
+                        {/* Items */}
+                        <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                          {filteredItems.map(item => (
+                            <div
+                              key={item.id}
+                              onClick={() => onToggleChecklistItem(task.id, checklist.id, item.id)}
+                              className={`flex items-center gap-2 p-2 rounded hover:bg-[#1a1f26] cursor-pointer transition-all
+                                        ${item.checked ? 'opacity-60' : ''}`}
+                            >
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                                            ${item.checked ? 'bg-accent border-accent' : 'border-[#5a6370]'}`}>
+                                {item.checked && (
+                                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className={`text-sm ${item.checked ? 'line-through text-[#6b7280]' : 'text-[#9fadbc]'}`}>
+                                {/* Highlight search match */}
+                                {checklistSearch ? (
+                                  <span dangerouslySetInnerHTML={{
+                                    __html: item.text.replace(
+                                      new RegExp(`(${checklistSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
+                                      '<mark class="bg-yellow-500/30 text-yellow-200 rounded px-0.5">$1</mark>'
+                                    )
+                                  }} />
+                                ) : (
+                                  item.text
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Add item */}
+                        {addingChecklistItem === checklist.id ? (
+                          <div className="mt-2">
+                            <input
+                              type="text"
+                              value={newChecklistItemText}
+                              onChange={(e) => setNewChecklistItemText(e.target.value)}
+                              placeholder="Add an item..."
+                              autoFocus
+                              className="w-full bg-[#1a1f26] border border-[#5a6370] rounded px-3 py-2 text-white text-sm
+                                       focus:outline-none focus:border-accent"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newChecklistItemText.trim()) {
+                                  onAddChecklistItem(task.id, checklist.id, newChecklistItemText.trim());
+                                  setNewChecklistItemText('');
+                                }
+                                if (e.key === 'Escape') {
+                                  setAddingChecklistItem(null);
+                                  setNewChecklistItemText('');
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setAddingChecklistItem(checklist.id)}
+                            className="mt-2 text-[#9fadbc] text-sm hover:text-white flex items-center gap-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add an item
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );

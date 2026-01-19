@@ -2,6 +2,57 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.5] - 2026-01-18
+
+### Added
+
+- **Collapsible Checklists**: Each checklist can now be collapsed/expanded
+  - Click header to toggle visibility
+  - Arrow icon indicates state
+  - Mini progress bar visible when collapsed
+  - "Expand All" / "Collapse All" button
+
+- **Searchable Checklists**: Filter checklist items in real-time
+  - Search input with magnifying glass icon
+  - Yellow highlight on matching text
+  - Shows filtered count (e.g., "3 of 10 items")
+  - Hides checklists with no matches
+  - Clear button to reset search
+
+- **Worker Infrastructure** (Background Processing)
+  - `TaskCoordinator` - Orchestrates task execution across workers
+  - `WorkerPool` - Manages 2-4 Web Workers with auto-scaling
+  - `TaskQueue` - Priority queue (high/normal/low)
+  - `RateLimiter` - Per-API rate limiting
+  - `MessageBus` - Pub/sub messaging system
+  - `useBackgroundEnrichment` - React hook for background processing
+
+- **AgentOrchestrator Background Mode**
+  - `enableBackgroundMode()` / `disableBackgroundMode()`
+  - `submitForBackground()` - Async task submission
+  - `waitForBackground()` - Promise-based completion
+  - `onBackgroundComplete()` - Event subscription
+  - `getBackgroundStats()` - Queue/pool statistics
+
+- **CLAUDE.md** - Claude Code configuration file
+  - Post-implementation steps (type check, build, docs)
+  - Commit message conventions
+  - Project structure documentation
+
+### Changed
+
+- `TaskDetailModal.tsx` - Checklists now collapsible and searchable
+- `TODO.md` - Added worker optimization tasks, marked checklist features complete
+
+### Technical Debt Identified
+
+- Polling-based processing (100ms interval) should be event-driven
+- TaskQueue uses O(n log n) sort on every access
+- RateLimiter not integrated with task dispatch
+- Callback maps not cleaned up after task completion
+
+---
+
 ## [0.3.4] - 2026-01-18
 
 ### Major Refactor: Agent Architecture

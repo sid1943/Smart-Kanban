@@ -55,6 +55,8 @@ Future improvements and features to be added.
 - [ ] Better mobile responsive design
 - [ ] Loading skeletons during data fetch
 - [ ] Undo/Redo for task actions
+- [x] Collapsible checklists (expand/collapse each checklist section)
+- [x] Searchable checklists (filter items within checklists)
 
 ---
 
@@ -93,6 +95,14 @@ Future improvements and features to be added.
 - [ ] Optimize re-renders in task list
 - [ ] Add unit tests for core functions
 - [ ] Add E2E tests with Playwright/Cypress
+
+### Worker Traffic Optimization (High Priority)
+- [ ] Replace polling-based processing with event-driven approach in TaskCoordinator (100ms interval is wasteful)
+- [ ] Optimize TaskQueue with heap/priority queue data structure (current O(n log n) sort on every call)
+- [ ] Integrate RateLimiter with task dispatch in processTask() (rate limiter exists but unused)
+- [ ] Fix memory leak - clean up callback maps after task completion (completionCallbacks/errorCallbacks grow indefinitely)
+- [ ] Add backpressure mechanism with getQueuePressure() method (no feedback when queue overwhelmed)
+- [ ] Add periodic cleanup interval for completed tasks (only cleans on queue full)
 
 ---
 

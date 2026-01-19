@@ -48,3 +48,42 @@ export {
   BookAgent,
   GameAgent,
 } from './agents';
+
+// Worker System exports (background processing)
+export {
+  // Message types and bus
+  MessageBus,
+  getMessageBus,
+  // Worker pool
+  WorkerPool,
+  getWorkerPool,
+  initializeWorkerPool,
+  // Task coordination
+  TaskCoordinator,
+  getTaskCoordinator,
+  initializeTaskCoordinator,
+  TaskQueue,
+  getTaskQueue,
+  RateLimiter,
+  getRateLimiter,
+  // Conflict resolution
+  ConflictResolver,
+  getConflictResolver,
+  // Validation
+  ValidationPipeline,
+  getValidationPipeline,
+  // Convenience functions
+  initializeWorkerSystem,
+  shutdownWorkerSystem,
+  // Types
+  type AgentId,
+  type MessageType,
+  type AgentMessage,
+  type EnrichmentTask,
+  type WorkerStatus,
+  type PoolStats,
+  type QueueStats,
+  type TaskResult,
+  type ValidationResult,
+  type ResolutionResult,
+} from './workers';
