@@ -48,6 +48,12 @@ All notable changes to Smart Kanban will be documented in this file.
   - Had closure issues causing it to run on every refresh regardless of cache state
   - Board now loads instantly without blocking on enrichment pre-fetch
 
+- **Card Moving to Bottom on Click**: Fixed cards with "NEW" badge moving to the bottom of the board when clicked
+  - Root cause: `TaskDetailModal` had a `useEffect` that overrode `hasNewContent` based on local season detection
+  - Local detection was incomplete (only checked seasons, ignored movies/books/games with sequels)
+  - The background scanner (`useNewContentScanner`) is now the authoritative source for `hasNewContent`
+  - Clicking cards no longer changes their position or removes their amber styling
+
 - **Data Persistence Race Condition**: Fixed a bug where refreshing the app could lose all data
   - Added `hasLoaded` flag to prevent save effect from running before load completes
   - Ensures localStorage is not overwritten with empty state during initial mount

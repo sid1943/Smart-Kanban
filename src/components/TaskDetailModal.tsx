@@ -175,14 +175,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
   const newSeasonInfo = detectNewSeasons();
 
-  // Update hasNewContent flag when new seasons detected
-  useEffect(() => {
-    if (newSeasonInfo.hasNew && !task.hasNewContent) {
-      onEditTask(task.id, { hasNewContent: true });
-    } else if (!newSeasonInfo.hasNew && task.hasNewContent) {
-      onEditTask(task.id, { hasNewContent: false });
-    }
-  }, [newSeasonInfo.hasNew, task.hasNewContent, task.id, onEditTask]);
+  // Note: hasNewContent is managed by the background scanner (useNewContentScanner)
+  // which handles all content types (TV, movies, books, games, anime)
+  // Do not override it here as local detection is incomplete
 
   // Add new seasons to the checklist
   const handleAddNewSeasons = () => {
