@@ -1751,6 +1751,7 @@ interface StoredGoal extends GoalState {
   order?: number;
   backgroundImage?: string;
   detectedCategory?: string;
+  columnOrder?: string[]; // Persisted order of columns/lists
 }
 
 // Default board background images
@@ -2083,8 +2084,8 @@ function SortableTaskCard({
   );
 }
 
-// Droppable Column for Task Board
-function DroppableTaskColumn({
+// Sortable + Droppable Column for Task Board (can be dragged to reorder AND accepts card drops)
+function SortableTaskColumn({
   category,
   displayName,
   tasks,
@@ -2095,19 +2096,50 @@ function DroppableTaskColumn({
   tasks: TaskItem[];
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  // Sortable for column reordering
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging: isColumnDragging,
+  } = useSortable({
     id: `column-${category}`,
-    data: { category },
+    data: { type: 'column', category },
   });
+
+  // Droppable for accepting cards
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: `column-${category}`,
+    data: { type: 'column', category },
+  });
+
+  // Combine refs
+  const setNodeRef = (node: HTMLDivElement | null) => {
+    setSortableRef(node);
+    setDroppableRef(node);
+  };
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isColumnDragging ? 0.5 : 1,
+  };
 
   return (
     <div
       ref={setNodeRef}
+      style={style}
       className={`w-[280px] flex-shrink-0 bg-[#101204] rounded-xl flex flex-col max-h-full transition-all
-        ${isOver ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
+        ${isOver && !isColumnDragging ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
     >
-      {/* Column header */}
-      <div className="px-3 py-2.5 flex items-center justify-between">
+      {/* Column header - drag handle for column reordering */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="px-3 py-2.5 flex items-center justify-between cursor-grab active:cursor-grabbing"
+      >
         <h3 className="text-[#b6c2cf] text-sm font-semibold">
           {displayName}
         </h3>
@@ -2392,6 +2424,55 @@ export default function App() {
 
   // Track active dragged task for DragOverlay
   const [activeTaskDragId, setActiveTaskDragId] = useState<string | null>(null);
+  // Track active dragged column for DragOverlay
+  const [activeColumnDragId, setActiveColumnDragId] = useState<string | null>(null);
+  // Track if we were just dragging (to restore scroll after drag ends)
+  const wasTaskDragging = useRef(false);
+
+  // Restore scroll position after drag ends - runs after React commits DOM changes
+  useEffect(() => {
+    if (activeTaskDragId) {
+      // Drag started - mark that we're dragging
+      wasTaskDragging.current = true;
+    } else if (wasTaskDragging.current) {
+      // Drag just ended - restore scroll position
+      wasTaskDragging.current = false;
+      // Use multiple frames to ensure DOM is fully updated
+      const restoreScroll = () => {
+        if (savedScrollPosition.current !== null && boardScrollRef.current) {
+          boardScrollRef.current.scrollLeft = savedScrollPosition.current;
+        }
+      };
+      // Immediate + delayed restoration to catch any late layout shifts
+      restoreScroll();
+      requestAnimationFrame(restoreScroll);
+      requestAnimationFrame(() => requestAnimationFrame(restoreScroll));
+    }
+  }, [activeTaskDragId]);
+
+  // Lock scroll position during column drags to prevent unwanted scrolling
+  useEffect(() => {
+    if (!activeColumnDragId) return;
+
+    const boardEl = boardScrollRef.current;
+    if (!boardEl) return;
+
+    const lockedScroll = boardEl.dataset.lockedScroll;
+    if (!lockedScroll) return;
+
+    const lockedScrollValue = parseFloat(lockedScroll);
+
+    // Prevent any scroll changes during column drag
+    const handleScroll = () => {
+      boardEl.scrollLeft = lockedScrollValue;
+    };
+
+    boardEl.addEventListener('scroll', handleScroll);
+    return () => {
+      boardEl.removeEventListener('scroll', handleScroll);
+      delete boardEl.dataset.lockedScroll;
+    };
+  }, [activeColumnDragId]);
 
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
@@ -3542,11 +3623,16 @@ export default function App() {
   const activeTaskDrag = activeGoal?.tasks.find(t => t.id === activeTaskDragId);
 
   // Memoize grouped and sorted tasks to prevent re-sorting on every render
-  const groupedTasks = useMemo(() => {
+  const { groupedTasks, stableColumnOrder } = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
+    const currentCategories = new Set<string>();
+
     activeGoal?.tasks.forEach((task, index) => {
       const cat = task.category || 'tasks';
-      if (!groups[cat]) groups[cat] = [];
+      currentCategories.add(cat);
+      if (!groups[cat]) {
+        groups[cat] = [];
+      }
       // Add original index for stable sorting
       groups[cat].push({ ...task, _originalIndex: index } as TaskItem & { _originalIndex: number });
     });
@@ -3567,14 +3653,34 @@ export default function App() {
       });
     });
 
-    return groups;
-  }, [activeGoal?.tasks]);
+    // Determine column order:
+    // 1. Use saved columnOrder from goal if available
+    // 2. Add any new categories that aren't in the saved order
+    let columnOrder: string[];
+    if (activeGoal?.columnOrder && activeGoal.columnOrder.length > 0) {
+      // Start with saved order
+      columnOrder = [...activeGoal.columnOrder];
+      // Add any new categories not in saved order
+      currentCategories.forEach(cat => {
+        if (!columnOrder.includes(cat)) {
+          columnOrder.push(cat);
+        }
+      });
+    } else {
+      // No saved order - use categories as they appear
+      columnOrder = Array.from(currentCategories);
+    }
+
+    return { groupedTasks: groups, stableColumnOrder: columnOrder };
+  }, [activeGoal?.tasks, activeGoal?.columnOrder, activeGoalId]);
 
   // Click-and-drag horizontal scroll for board
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const isDraggingScroll = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
+  // Preserve scroll position during card drag operations
+  const savedScrollPosition = useRef<number | null>(null);
 
   const handleBoardMouseDown = useCallback((e: React.MouseEvent) => {
     // Don't start scroll if clicking on a draggable card
@@ -3837,6 +3943,50 @@ export default function App() {
         return goal;
       }));
     }
+  };
+
+  // Handle column drag end - reorder columns and persist to goal
+  const handleColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !activeGoalId || !activeGoal) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Active must be a column
+    if (!activeId.startsWith('column-')) return;
+
+    const activeCategory = activeId.replace('column-', '');
+    let overCategory: string | null = null;
+
+    // Determine target column - could be dropping on column or on a card inside a column
+    if (overId.startsWith('column-')) {
+      overCategory = overId.replace('column-', '');
+    } else {
+      // Dropping on a card - find which column that card belongs to
+      const overTask = activeGoal.tasks.find(t => t.id === overId);
+      if (overTask) {
+        overCategory = overTask.category || 'tasks';
+      }
+    }
+
+    if (!overCategory || activeCategory === overCategory) return;
+
+    // Reorder columns and save to goal (persists to localStorage)
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Get current column order (from goal or calculate from tasks)
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+        const oldIndex = currentOrder.indexOf(activeCategory);
+        const newIndex = currentOrder.indexOf(overCategory!);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const reordered = arrayMove([...currentOrder], oldIndex, newIndex);
+          return { ...goal, columnOrder: reordered };
+        }
+      }
+      return goal;
+    }));
   };
 
   // Add a new task manually
@@ -6012,35 +6162,109 @@ export default function App() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
-          onDragStart={(e) => setActiveTaskDragId(e.active.id as string)}
-          onDragOver={handleTaskDragOver}
-          onDragEnd={(e) => {
-            handleTaskDragEnd(e);
-            setActiveTaskDragId(null);
+          autoScroll={
+            // Disable auto-scroll when dragging columns, enable for cards
+            activeColumnDragId
+              ? false
+              : {
+                  threshold: { x: 0.1, y: 0.1 },
+                  acceleration: 5,
+                }
+          }
+          onDragStart={(e) => {
+            const activeId = e.active.id as string;
+            const isDraggingColumn = activeId.startsWith('column-');
+
+            // Only save scroll position for card drags (not column drags)
+            if (!isDraggingColumn) {
+              savedScrollPosition.current = boardScrollRef.current?.scrollLeft ?? null;
+            } else {
+              // Prevent scroll during column drag by locking scroll position
+              if (boardScrollRef.current) {
+                const scrollLeft = boardScrollRef.current.scrollLeft;
+                boardScrollRef.current.dataset.lockedScroll = String(scrollLeft);
+              }
+            }
+
+            // Check if dragging a column or a card
+            if (isDraggingColumn) {
+              setActiveColumnDragId(activeId);
+              setActiveTaskDragId(null);
+            } else {
+              setActiveTaskDragId(activeId);
+              setActiveColumnDragId(null);
+            }
           }}
-          onDragCancel={() => setActiveTaskDragId(null)}
+          onDragOver={(e) => {
+            // Only handle drag over for cards, not columns - check event directly
+            const activeId = e.active.id as string;
+            if (!activeId.startsWith('column-')) {
+              handleTaskDragOver(e);
+            }
+          }}
+          onDragEnd={(e) => {
+            const activeId = e.active.id as string;
+            const isDraggingColumn = activeId.startsWith('column-');
+
+            // Only save/restore scroll for card drags, not column drags
+            const scrollPos = !isDraggingColumn
+              ? (boardScrollRef.current?.scrollLeft ?? savedScrollPosition.current)
+              : null;
+
+            // Handle based on what we're dragging
+            if (isDraggingColumn) {
+              handleColumnDragEnd(e);
+              setActiveColumnDragId(null);
+            } else {
+              handleTaskDragEnd(e);
+              setActiveTaskDragId(null);
+
+              // Restore scroll position after React re-renders (only for card drags)
+              if (scrollPos !== null) {
+                requestAnimationFrame(() => {
+                  if (boardScrollRef.current) {
+                    boardScrollRef.current.scrollLeft = scrollPos;
+                  }
+                });
+              }
+            }
+          }}
+          onDragCancel={() => {
+            setActiveTaskDragId(null);
+            setActiveColumnDragId(null);
+            // Restore scroll position on cancel too
+            if (savedScrollPosition.current !== null && boardScrollRef.current) {
+              boardScrollRef.current.scrollLeft = savedScrollPosition.current;
+            }
+          }}
         >
           <div className="flex gap-3 items-start h-full">
-            {Object.entries(groupedTasks).map(([category, tasks]) => {
-              // Get display name for category
-              const categoryDisplayNames: Record<string, string> = {
-                'to_watch': 'To Watch',
-                'watching': 'Watching',
-                'watched': 'Watched',
-                'dropped': 'Dropped',
-                'on_hold': 'On Hold',
-                'tasks': 'Tasks',
-                'custom': 'Custom',
-              };
-              const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            {/* SortableContext for column reordering */}
+            <SortableContext
+              items={stableColumnOrder.map(c => `column-${c}`)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {stableColumnOrder.map(category => {
+                const tasks = groupedTasks[category] || [];
+                // Get display name for category
+                const categoryDisplayNames: Record<string, string> = {
+                  'to_watch': 'To Watch',
+                  'watching': 'Watching',
+                  'watched': 'Watched',
+                  'dropped': 'Dropped',
+                  'on_hold': 'On Hold',
+                  'tasks': 'Tasks',
+                  'custom': 'Custom',
+                };
+                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-              return (
-                <DroppableTaskColumn
-                  key={category}
-                  category={category}
-                  displayName={displayName}
-                  tasks={tasks}
-                >
+                return (
+                  <SortableTaskColumn
+                    key={category}
+                    category={category}
+                    displayName={displayName}
+                    tasks={tasks}
+                  >
                   {/* Per-column SortableContext - only cards in THIS column shift */}
                   <SortableContext
                     items={tasks.map(t => t.id)}
@@ -6117,9 +6341,10 @@ export default function App() {
                       Add a task
                     </button>
                   )}
-                </DroppableTaskColumn>
+                </SortableTaskColumn>
               );
             })}
+            </SortableContext>
 
             {/* Add another list button */}
             <button
@@ -6138,7 +6363,7 @@ export default function App() {
             </button>
             </div>
 
-          {/* Drag overlay - shows dragged card without affecting original */}
+          {/* Drag overlay - shows dragged card or column without affecting original */}
           <DragOverlay
             dropAnimation={{
               duration: 200,
@@ -6149,6 +6374,42 @@ export default function App() {
               <div className="rounded-lg shadow-lg px-3 py-2 bg-[#22272b] border-2 border-accent cursor-grabbing">
                 <span className="text-sm text-white">{activeTaskDrag.text}</span>
               </div>
+            ) : activeColumnDragId ? (
+              // Column overlay
+              (() => {
+                const category = activeColumnDragId.replace('column-', '');
+                const categoryDisplayNames: Record<string, string> = {
+                  'to_watch': 'To Watch',
+                  'watching': 'Watching',
+                  'watched': 'Watched',
+                  'dropped': 'Dropped',
+                  'on_hold': 'On Hold',
+                  'tasks': 'Tasks',
+                  'custom': 'Custom',
+                };
+                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const tasks = groupedTasks[category] || [];
+                return (
+                  <div className="w-[280px] bg-[#101204] rounded-xl shadow-2xl border-2 border-accent cursor-grabbing opacity-90">
+                    <div className="px-3 py-2.5 flex items-center justify-between">
+                      <h3 className="text-[#b6c2cf] text-sm font-semibold">{displayName}</h3>
+                      <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">{tasks.length}</span>
+                    </div>
+                    <div className="px-2 pb-2 space-y-2 max-h-[200px] overflow-hidden">
+                      {tasks.slice(0, 3).map(task => (
+                        <div key={task.id} className="rounded-lg px-3 py-2 bg-[#22272b]">
+                          <span className="text-sm text-white/80">{task.text}</span>
+                        </div>
+                      ))}
+                      {tasks.length > 3 && (
+                        <div className="text-xs text-white/50 text-center py-1">
+                          +{tasks.length - 3} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
             ) : null}
           </DragOverlay>
         </DndContext>

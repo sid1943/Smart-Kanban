@@ -13,6 +13,22 @@ All notable changes to Smart Kanban will be documented in this file.
   - Column highlights when card is dragged over it
   - Uses dnd-kit library for smooth animations
 
+- **Drag & Drop Column Reordering**: Drag columns/lists to reorder them
+  - Drag column header to move entire column
+  - Visual preview shows column being dragged with first 3 cards
+  - Column order persists to localStorage (survives page reload)
+  - Scroll locked during column drag to prevent unwanted board scrolling
+
+- **Cross-Tab Real-Time Sync**: Changes sync between browser tabs instantly
+  - Uses localStorage `storage` event listener
+  - Changes in one tab appear immediately in other tabs
+  - No manual refresh needed
+
+- **24-Hour API Cache**: API responses cached to preserve free tier limits
+  - Enrichment data cached for 24 hours per task
+  - Refresh button uses cache, only hits API if cache > 24 hours old
+  - Reduces unnecessary API calls significantly
+
 - **Generalized New Content Detection**: Extended "new content" detection to all content types
   - **TV Series**: Detects new seasons via TMDb `number_of_seasons` and `next_episode_to_air`
   - **Movies**: Detects sequels in franchises via TMDb `belongs_to_collection`
@@ -69,6 +85,14 @@ All notable changes to Smart Kanban will be documented in this file.
 - **Click-and-Drag Horizontal Scroll**: Boards now support horizontal scrolling by click-and-drag
   - Hold mouse button and drag left/right to scroll board columns
   - Prevents accidental drags when clicking cards
+
+- **Stable Column Order**: Columns no longer shift position when cards move between them
+  - Column order tracked separately from task grouping
+  - Persists across renders and page reloads
+
+- **Card Drag Scroll Preservation**: Board scroll position preserved when dragging cards
+  - Scroll position saved on drag start, restored on drag end
+  - Prevents board from jumping when dropping cards
 
 - **Data Persistence Race Condition**: Fixed a bug where refreshing the app could lose all data
   - Added `hasLoaded` flag to prevent save effect from running before load completes

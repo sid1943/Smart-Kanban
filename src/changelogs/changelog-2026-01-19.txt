@@ -88,4 +88,55 @@ FILES ADDED:
 - src/engine/detection/strategies/GameStrategy.ts
 - src/changelogs/changelog-2026-01-19.txt (this file)
 
+--------------------------------------------------------------------------------
+
+SESSION 2: Column Reordering & Cross-Tab Sync
+--------------------------------------------------------------------------------
+
+[NEW] Drag & Drop Column Reordering
+- Columns/lists can now be reordered by dragging their headers
+- Visual preview shows column being dragged with first 3 cards
+- Column order persists to localStorage (survives page reload)
+- Stored in goal.columnOrder property
+
+[NEW] Cross-Tab Real-Time Sync
+- Changes now sync between browser tabs instantly
+- Uses localStorage storage event listener
+- Changes in one tab appear immediately in other tabs
+- No manual refresh needed
+
+[NEW] 24-Hour API Cache
+- Enrichment API responses cached for 24 hours per task
+- Refresh button uses cache, only hits API if cache > 24 hours old
+- Reduces unnecessary API calls to preserve free tier limits
+- Cache stored in task.cachedEnrichment with fetchedAt timestamp
+
+[FIX] Stable Column Order During Card Drags
+- Columns no longer shift position when cards move between them
+- Per-column SortableContext ensures only cards in same column shift
+- Column order tracked separately from task grouping
+
+[FIX] Card Drag Scroll Preservation
+- Board scroll position preserved when dragging cards
+- Scroll position saved on drag start, restored on drag end
+- Prevents board from jumping when dropping cards
+
+[FIX] Column Drag Scroll Lock
+- Board scroll locked during column drags
+- Prevents unwanted horizontal scrolling when moving columns
+- Scroll only occurs when dragging near viewport edges
+
+[TECHNICAL] Drag & Drop Implementation
+- SortableTaskColumn: Combined sortable + droppable component
+- horizontalListSortingStrategy for column reordering
+- verticalListSortingStrategy for card reordering (per-column)
+- Conditional auto-scroll: disabled for columns, enabled for cards
+- Scroll lock via dataset.lockedScroll and scroll event listener
+
+FILES MODIFIED:
+- src/App.tsx (column reordering, scroll preservation, cross-tab sync)
+- src/hooks/useNewContentScanner.ts (24-hour cache, manual refresh)
+- CHANGELOG.md (added new features)
+- TODO.md (marked column reordering complete)
+
 ================================================================================

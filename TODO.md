@@ -36,7 +36,7 @@ Future improvements and features to be added.
 - [ ] "Due today" / "Due this week" filters
 
 ### Board & List Management
-- [ ] Drag & drop to reorder lists
+- [x] Drag & drop to reorder lists (v0.3.6)
 - [ ] Rename lists inline
 - [ ] Archive completed boards
 - [ ] Board templates (Media, Project, Travel, etc.)
@@ -240,6 +240,10 @@ Future improvements and features to be added.
 - [x] Removed pre-load enrichment screen (was causing refresh delays) (v0.3.6)
 - [x] Stable card sorting with original index tiebreaker (v0.3.6)
 - [x] Click-and-drag horizontal scroll for boards (v0.3.6)
+- [x] Drag & drop to reorder lists/columns (v0.3.6)
+- [x] Column order persists to localStorage (v0.3.6)
+- [x] Cross-tab real-time sync via storage events (v0.3.6)
+- [x] 24-hour API cache for enrichment data (v0.3.6)
 
 ---
 
