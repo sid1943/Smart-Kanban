@@ -90,6 +90,10 @@ Future improvements and features to be added.
 
 ## Bugs & Technical Debt
 
+### Performance
+- [ ] **Reduce scroll lag during content refresh** - Move scanning to Web Worker to avoid blocking main thread
+- [ ] Use `requestIdleCallback` for non-critical background tasks
+
 ### Code Quality
 - [ ] Handle localStorage quota exceeded gracefully
 - [ ] Add error boundaries to all major components

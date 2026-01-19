@@ -1980,11 +1980,13 @@ function SortableTaskCard({
     isDragging,
   } = useSortable({ id: task.id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition || 'transform 200ms ease',
+    // Hide original when dragging - DragOverlay shows the visual
+    opacity: isDragging ? 0 : 1,
     zIndex: isDragging ? 1000 : 1,
+    touchAction: 'none',
   };
 
   const colorMap: Record<string, string> = {
@@ -2141,11 +2143,13 @@ function SortableTaskCardWrapper({
     isDragging,
   } = useSortable({ id: task.id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition || 'transform 200ms ease',
+    // Hide original when dragging - DragOverlay shows the visual
+    opacity: isDragging ? 0 : 1,
     zIndex: isDragging ? 1000 : 1,
+    touchAction: 'none',
   };
 
   const colorMap: Record<string, string> = {
@@ -2165,10 +2169,16 @@ function SortableTaskCardWrapper({
     <div
       ref={setNodeRef}
       style={style}
+      data-task-card="true"
       {...attributes}
       {...listeners}
-      onClick={onSelect}
-      className={`rounded-lg px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing transition-all relative
+      onClick={(e) => {
+        if (!isDragging) {
+          e.stopPropagation();
+          onSelect();
+        }
+      }}
+      className={`rounded-lg shadow-sm transition-all relative cursor-grab active:cursor-grabbing px-3 py-2
         ${task.hasNewContent
           ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
           : 'bg-[#22272b] hover:bg-[#2c323a]'
@@ -2368,20 +2378,20 @@ export default function App() {
   const [columnOrder, setColumnOrder] = useState<string[]>(categoryColumns.map(c => c.id));
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
-  // DnD sensors
+  // DnD sensors - lower distance for easier activation
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        // Require both distance AND delay to prevent accidental drags on click
-        distance: 10,
-        delay: 150,
-        tolerance: 5,
+        distance: 3, // Very small distance to start drag
       },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  // Track active dragged task for DragOverlay
+  const [activeTaskDragId, setActiveTaskDragId] = useState<string | null>(null);
 
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
@@ -2512,6 +2522,48 @@ export default function App() {
     }));
   }, [hasLoaded, goals, userInfo, profileData, workspaces, customProfileCategories, customProfileFields, calendarEvents]);
 
+  // Real-time sync between tabs - listen for storage changes from other tabs
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Only react to changes in our app's data from OTHER tabs
+      if (e.key !== 'smart_task_hub_v3' || !e.newValue) return;
+
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (parsed.goals && Array.isArray(parsed.goals)) {
+          setGoals(parsed.goals);
+        }
+        if (parsed.userInfo && Array.isArray(parsed.userInfo)) {
+          setUserInfo(parsed.userInfo);
+        }
+        if (parsed.profileData && typeof parsed.profileData === 'object') {
+          setProfileData(parsed.profileData);
+        }
+        if (parsed.workspaces && Array.isArray(parsed.workspaces)) {
+          setWorkspaces(parsed.workspaces);
+        }
+        if (parsed.customProfileCategories && Array.isArray(parsed.customProfileCategories)) {
+          setCustomProfileCategories(parsed.customProfileCategories);
+        }
+        if (parsed.customProfileFields && Array.isArray(parsed.customProfileFields)) {
+          setCustomProfileFields(parsed.customProfileFields);
+        }
+        if (parsed.calendarEvents && Array.isArray(parsed.calendarEvents)) {
+          const events = parsed.calendarEvents.map((ev: CalendarEvent & { startDate: string; endDate: string }) => ({
+            ...ev,
+            startDate: new Date(ev.startDate),
+            endDate: new Date(ev.endDate),
+          }));
+          setCalendarEvents(events);
+        }
+      } catch (err) {
+        console.error('Error syncing from other tab:', err);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // Function to check if a task matches user info or profile data
   const getTaskInfoMatch = (task: TaskItem): { matched: boolean; info?: UserInfoItem; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' } => {
@@ -3487,6 +3539,7 @@ export default function App() {
   };
 
   const activeGoal = goals.find(g => g.id === activeGoalId);
+  const activeTaskDrag = activeGoal?.tasks.find(t => t.id === activeTaskDragId);
 
   // Memoize grouped and sorted tasks to prevent re-sorting on every render
   const groupedTasks = useMemo(() => {
@@ -3524,6 +3577,11 @@ export default function App() {
   const scrollLeft = useRef(0);
 
   const handleBoardMouseDown = useCallback((e: React.MouseEvent) => {
+    // Don't start scroll if clicking on a draggable card
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-task-card]')) {
+      return;
+    }
     const el = boardScrollRef.current;
     if (!el) return;
     isDraggingScroll.current = true;
@@ -3646,8 +3704,61 @@ export default function App() {
     }));
   };
 
+  // Track the last category we moved to during drag (prevents duplicate updates)
+  const lastDragOverCategory = useRef<string | null>(null);
+
+  // Handle task drag over - for real-time column detection during drag
+  const handleTaskDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over || !activeGoalId) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Find the active task
+    const activeTask = activeGoal?.tasks.find(t => t.id === activeId);
+    if (!activeTask) return;
+
+    // Determine target category
+    let targetCategory: string | undefined = undefined;
+
+    if (overId.startsWith('column-')) {
+      targetCategory = overId.replace('column-', '');
+    } else {
+      // Dropping over another task - get that task's category
+      const overTask = activeGoal?.tasks.find(t => t.id === overId);
+      if (overTask?.category) {
+        targetCategory = overTask.category;
+      }
+    }
+
+    // Only update if category changed AND different from last update (prevents duplicate state updates)
+    if (targetCategory &&
+        activeTask.category !== targetCategory &&
+        lastDragOverCategory.current !== targetCategory) {
+      lastDragOverCategory.current = targetCategory;
+      const newCategory = targetCategory;
+      setGoals(prev => prev.map(goal => {
+        if (goal.id === activeGoalId) {
+          return {
+            ...goal,
+            tasks: goal.tasks.map(task =>
+              task.id === activeId
+                ? { ...task, category: newCategory }
+                : task
+            ),
+          };
+        }
+        return goal;
+      }));
+    }
+  };
+
   // Handle task drag end - move between columns or reorder within column
   const handleTaskDragEnd = (event: DragEndEvent) => {
+    // Reset the drag over tracking
+    lastDragOverCategory.current = null;
+
     const { active, over } = event;
 
     if (!over || !activeGoalId) return;
@@ -5892,7 +6003,7 @@ export default function App() {
       {/* Kanban-style board layout - click and drag to scroll horizontally */}
       <div
         ref={boardScrollRef}
-        className="p-3 overflow-x-auto h-[calc(100vh-60px)] select-none"
+        className="p-3 overflow-x-auto h-[calc(100vh-60px)]"
         onMouseDown={handleBoardMouseDown}
         onMouseMove={handleBoardMouseMove}
         onMouseUp={handleBoardMouseUp}
@@ -5901,7 +6012,13 @@ export default function App() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
-          onDragEnd={handleTaskDragEnd}
+          onDragStart={(e) => setActiveTaskDragId(e.active.id as string)}
+          onDragOver={handleTaskDragOver}
+          onDragEnd={(e) => {
+            handleTaskDragEnd(e);
+            setActiveTaskDragId(null);
+          }}
+          onDragCancel={() => setActiveTaskDragId(null)}
         >
           <div className="flex gap-3 items-start h-full">
             {Object.entries(groupedTasks).map(([category, tasks]) => {
@@ -5924,7 +6041,11 @@ export default function App() {
                   displayName={displayName}
                   tasks={tasks}
                 >
-                  <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  {/* Per-column SortableContext - only cards in THIS column shift */}
+                  <SortableContext
+                    items={tasks.map(t => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
                     {tasks.map(task => {
                       const infoMatch = getTaskInfoMatch(task);
                       return (
@@ -6015,7 +6136,21 @@ export default function App() {
               </svg>
               Add another list
             </button>
-          </div>
+            </div>
+
+          {/* Drag overlay - shows dragged card without affecting original */}
+          <DragOverlay
+            dropAnimation={{
+              duration: 200,
+              easing: 'ease',
+            }}
+          >
+            {activeTaskDrag ? (
+              <div className="rounded-lg shadow-lg px-3 py-2 bg-[#22272b] border-2 border-accent cursor-grabbing">
+                <span className="text-sm text-white">{activeTaskDrag.text}</span>
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       </div>
 

@@ -50,6 +50,17 @@ interface ScanResult {
   };
 }
 
+// Cache duration: 24 hours in milliseconds
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// Check if cache is still valid (less than 24 hours old)
+function isCacheValid(cachedEnrichment?: CachedEnrichment): boolean {
+  if (!cachedEnrichment?.fetchedAt) return false;
+  const fetchedAt = new Date(cachedEnrichment.fetchedAt).getTime();
+  const now = Date.now();
+  return now - fetchedAt < CACHE_DURATION_MS;
+}
+
 // Extract year from title like "Show Name (2019- )" or "Show Name (2019)"
 function extractYear(title: string): string | undefined {
   const match = title.match(/\((\d{4})/);
@@ -97,6 +108,11 @@ function needsNewContentCheck(task: TaskItem): boolean {
   return true;
 }
 
+// Yield to allow UI to update (prevents lag)
+function yieldToUI(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 export function useNewContentScanner(
   tasks: TaskItem[],
   onUpdateTask: (taskId: string, updates: Partial<TaskItem>) => void,
@@ -107,19 +123,22 @@ export function useNewContentScanner(
   const [totalToScan, setTotalToScan] = useState(0);
   const [results, setResults] = useState<ScanResult[]>([]);
 
-  const scanTasks = useCallback(async () => {
-    if (!enabled || scanning) return;
+  const scanTasks = useCallback(async (isManualTrigger: boolean = false) => {
+    if (scanning) return;
+    // For manual trigger (button click), always run. For auto-scan, check enabled.
+    if (!enabled && !isManualTrigger) return;
 
     // Filter to scannable tasks (any task with a valid content type)
     const scannableTasks = tasks.filter(isScannableTask);
-
     if (scannableTasks.length === 0) return;
 
-    // Further filter: only scan tasks that need enrichment (no cache) or new content detection
+    // Determine which tasks need processing
+    // - Tasks with no cache always need processing
+    // - Tasks with stale cache (> 24 hours) need API refresh
+    // - Tasks with valid cache only need detection re-run (no API call)
     const tasksToProcess = scannableTasks.filter(
       (task) => !task.cachedEnrichment || needsNewContentCheck(task)
     );
-
     if (tasksToProcess.length === 0) return;
 
     setScanning(true);
@@ -138,12 +157,19 @@ export function useNewContentScanner(
         const title = cleanTitle(task.text);
         const year = extractYear(task.text);
 
-        // Use cached data if available, otherwise fetch
-        let enrichedData: EnrichedData = task.cachedEnrichment?.data || null;
-        let needsCache = !task.cachedEnrichment;
+        // Check cache validity
+        const cacheIsValid = isCacheValid(task.cachedEnrichment);
 
-        if (!enrichedData) {
-          // Fetch enriched data using the agent orchestrator
+        // Use cached data if valid, otherwise fetch from API
+        let enrichedData: EnrichedData = null;
+        let needsApiCall = false;
+
+        if (cacheIsValid && task.cachedEnrichment?.data) {
+          // Cache is valid (< 24 hours old), use it
+          enrichedData = task.cachedEnrichment.data;
+        } else {
+          // Cache is stale or missing, need API call
+          needsApiCall = true;
           enrichedData = await agentOrchestrator.enrich(
             title,
             task.contentType!,
@@ -155,8 +181,8 @@ export function useNewContentScanner(
           // Build update object
           const updates: Partial<TaskItem> = {};
 
-          // Cache the enrichment data if we just fetched it
-          if (needsCache) {
+          // Update cache if we just fetched from API
+          if (needsApiCall) {
             updates.cachedEnrichment = {
               data: enrichedData,
               fetchedAt: new Date().toISOString(),
@@ -212,8 +238,11 @@ export function useNewContentScanner(
 
         setScannedCount(i + 1);
 
-        // Rate limiting: wait 250ms between API requests (skip if using cache)
-        if (needsCache && i < tasksToProcess.length - 1) {
+        // Yield to UI to prevent lag
+        await yieldToUI();
+
+        // Rate limiting: wait 250ms between API requests only
+        if (needsApiCall && i < tasksToProcess.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
       } catch (error) {
@@ -231,17 +260,22 @@ export function useNewContentScanner(
 
     // Wait 3 seconds after board loads to let UI settle first
     const timer = setTimeout(() => {
-      scanTasks();
+      scanTasks(false); // Don't force API refresh on auto-scan
     }, 3000);
 
     return () => clearTimeout(timer);
   }, [enabled]); // Only trigger on enable, not on every tasks change
+
+  // Manual rescan function - uses cache, only hits API if cache > 24 hours old
+  const rescan = useCallback(() => {
+    scanTasks(true); // Force scan even if not enabled
+  }, [scanTasks]);
 
   return {
     scanning,
     scannedCount,
     totalToScan,
     results,
-    rescan: scanTasks,
+    rescan,
   };
 }
