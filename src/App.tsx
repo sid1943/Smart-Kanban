@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNewContentScanner } from './hooks/useNewContentScanner';
 import { enrichFromTMDb } from './engine/enrichment/tmdb';
 import { UpcomingContent } from './engine/types';
@@ -1823,12 +1823,18 @@ function SortableCard({
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="bg-[#22272b] hover:bg-[#282d33] rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing
+      className="bg-[#22272b] hover:bg-[#282d33] rounded-lg px-3 py-2
                transition-all shadow-sm hover:shadow-md group relative"
     >
-      <div onClick={onSelect} className="cursor-pointer">
+      {/* Drag handle - only this area triggers drag */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-0 left-0 w-full h-6 cursor-grab active:cursor-grabbing"
+        title="Drag to reorder"
+      />
+
+      <div onClick={onSelect} className="cursor-pointer relative z-10">
         {/* Card Title */}
         <h3 className="text-[#b6c2cf] text-sm font-normal leading-snug">
           {goal.goal}
@@ -1993,39 +1999,6 @@ export default function App() {
   }>>({});
   const [activeProfileCategory, setActiveProfileCategory] = useState<string>('travel');
 
-  // Ref for horizontal scroll containers
-  const boardScrollRef = useRef<HTMLDivElement>(null);
-  const taskBoardScrollRef = useRef<HTMLDivElement>(null);
-
-  // Enable horizontal scroll with mouse wheel
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      const target = e.currentTarget as HTMLDivElement;
-      if (target && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        target.scrollLeft += e.deltaY;
-      }
-    };
-
-    const boardEl = boardScrollRef.current;
-    const taskBoardEl = taskBoardScrollRef.current;
-
-    if (boardEl) {
-      boardEl.addEventListener('wheel', handleWheel, { passive: false });
-    }
-    if (taskBoardEl) {
-      taskBoardEl.addEventListener('wheel', handleWheel, { passive: false });
-    }
-
-    return () => {
-      if (boardEl) {
-        boardEl.removeEventListener('wheel', handleWheel);
-      }
-      if (taskBoardEl) {
-        taskBoardEl.removeEventListener('wheel', handleWheel);
-      }
-    };
-  }, [viewMode, activeGoalId]);
 
   // Form state for creating new goals
   const [formState, setFormState] = useState<{
@@ -3312,6 +3285,72 @@ export default function App() {
   };
 
   const activeGoal = goals.find(g => g.id === activeGoalId);
+
+  // Memoize grouped and sorted tasks to prevent re-sorting on every render
+  const groupedTasks = useMemo(() => {
+    const groups: Record<string, TaskItem[]> = {};
+    activeGoal?.tasks.forEach((task, index) => {
+      const cat = task.category || 'tasks';
+      if (!groups[cat]) groups[cat] = [];
+      // Add original index for stable sorting
+      groups[cat].push({ ...task, _originalIndex: index } as TaskItem & { _originalIndex: number });
+    });
+
+    // Sort tasks: hasNewContent cards first, then by position, then by original index (stable)
+    Object.keys(groups).forEach(cat => {
+      groups[cat].sort((a, b) => {
+        const aExt = a as TaskItem & { _originalIndex: number };
+        const bExt = b as TaskItem & { _originalIndex: number };
+        // hasNewContent cards come first
+        if (a.hasNewContent && !b.hasNewContent) return -1;
+        if (!a.hasNewContent && b.hasNewContent) return 1;
+        // Then by position
+        const posDiff = (a.position || 0) - (b.position || 0);
+        if (posDiff !== 0) return posDiff;
+        // Finally by original index for stability
+        return aExt._originalIndex - bExt._originalIndex;
+      });
+    });
+
+    return groups;
+  }, [activeGoal?.tasks]);
+
+  // Click-and-drag horizontal scroll for board
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const isDraggingScroll = useRef(false);
+  const startX = useRef(0);
+  const scrollLeft = useRef(0);
+
+  const handleBoardMouseDown = useCallback((e: React.MouseEvent) => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    isDraggingScroll.current = true;
+    startX.current = e.pageX - el.offsetLeft;
+    scrollLeft.current = el.scrollLeft;
+    el.style.cursor = 'grabbing';
+  }, []);
+
+  const handleBoardMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDraggingScroll.current) return;
+    e.preventDefault();
+    const el = boardScrollRef.current;
+    if (!el) return;
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startX.current) * 1.5; // Scroll speed multiplier
+    el.scrollLeft = scrollLeft.current - walk;
+  }, []);
+
+  const handleBoardMouseUp = useCallback(() => {
+    isDraggingScroll.current = false;
+    const el = boardScrollRef.current;
+    if (el) el.style.cursor = 'grab';
+  }, []);
+
+  const handleBoardMouseLeave = useCallback(() => {
+    isDraggingScroll.current = false;
+    const el = boardScrollRef.current;
+    if (el) el.style.cursor = 'grab';
+  }, []);
 
   const handleInitialSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -5324,7 +5363,7 @@ export default function App() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div ref={boardScrollRef} className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
+          <div className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
             <div className="flex gap-3 items-start h-full">
               <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                 {visibleColumns.map(column => {
@@ -5515,25 +5554,6 @@ export default function App() {
     );
   }
 
-  // Task list view for active goal - with same background
-  const groupedTasks: Record<string, TaskItem[]> = {};
-  activeGoal?.tasks.forEach(task => {
-    const cat = task.category || 'tasks';
-    if (!groupedTasks[cat]) groupedTasks[cat] = [];
-    groupedTasks[cat].push(task);
-  });
-
-  // Sort tasks: hasNewContent cards first, then by position
-  Object.keys(groupedTasks).forEach(cat => {
-    groupedTasks[cat].sort((a, b) => {
-      // hasNewContent cards come first
-      if (a.hasNewContent && !b.hasNewContent) return -1;
-      if (!a.hasNewContent && b.hasNewContent) return 1;
-      // Then by position
-      return (a.position || 0) - (b.position || 0);
-    });
-  });
-
   // Show loading screen while pre-fetching enrichment data
   if (enrichmentLoading) {
     return (
@@ -5618,8 +5638,15 @@ export default function App() {
         </div>
       </div>
 
-      {/* Kanban-style board layout */}
-      <div ref={taskBoardScrollRef} className="p-3 overflow-x-auto h-[calc(100vh-60px)]">
+      {/* Kanban-style board layout - click and drag to scroll horizontally */}
+      <div
+        ref={boardScrollRef}
+        className="p-3 overflow-x-auto h-[calc(100vh-60px)] cursor-grab select-none"
+        onMouseDown={handleBoardMouseDown}
+        onMouseMove={handleBoardMouseMove}
+        onMouseUp={handleBoardMouseUp}
+        onMouseLeave={handleBoardMouseLeave}
+      >
         <div className="flex gap-3 items-start h-full">
           {Object.entries(groupedTasks).map(([category, tasks]) => {
             // Get display name for category
@@ -5654,6 +5681,7 @@ export default function App() {
                       <div
                         key={task.id}
                         onClick={() => setSelectedTaskId(task.id)}
+                        onMouseDown={(e) => e.stopPropagation()}
                         className={`rounded-lg px-3 py-2 shadow-sm cursor-pointer transition-all
                           ${task.hasNewContent
                             ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
