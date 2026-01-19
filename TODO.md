@@ -13,8 +13,8 @@ Future improvements and features to be added.
 - [ ] Recent searches history
 
 ### Task Management
-- [ ] Drag & drop tasks between lists
-- [ ] Drag & drop to reorder tasks within a list
+- [x] Drag & drop tasks between lists (v0.3.6)
+- [x] Drag & drop to reorder tasks within a list (v0.3.6)
 - [ ] Bulk select and move/delete/complete tasks
 - [ ] Task priority levels with sorting
 - [ ] Recurring tasks

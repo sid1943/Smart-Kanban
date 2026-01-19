@@ -15,6 +15,7 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
+  useDroppable,
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
 import TaskDetailModal from './components/TaskDetailModal';
@@ -1958,6 +1959,310 @@ function SortableColumn({
   );
 }
 
+// Sortable Task Card Component for Kanban board
+function SortableTaskCard({
+  task,
+  onSelect,
+  getContentKindLabel,
+  isUpcoming,
+}: {
+  task: TaskItem;
+  onSelect: () => void;
+  getContentKindLabel: (kind: string) => string;
+  isUpcoming: (date?: string) => boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 1,
+  };
+
+  const colorMap: Record<string, string> = {
+    green: 'bg-green-600',
+    yellow: 'bg-yellow-500',
+    orange: 'bg-orange-500',
+    red: 'bg-red-500',
+    purple: 'bg-purple-500',
+    blue: 'bg-blue-500',
+    sky: 'bg-sky-500',
+    lime: 'bg-lime-500',
+    pink: 'bg-pink-500',
+    black: 'bg-gray-700',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-lg px-3 py-2 shadow-sm transition-all group
+        ${task.hasNewContent
+          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
+          : 'bg-[#22272b] hover:bg-[#2c323a]'
+        }
+        ${task.checked ? 'opacity-60' : ''}
+        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
+    >
+      {/* Drag handle at top */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-0 left-0 w-full h-5 cursor-grab active:cursor-grabbing"
+      />
+
+      <div onClick={onSelect} className="cursor-pointer relative">
+        {/* Labels */}
+        {task.labels && task.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1">
+            {task.labels.map((label, idx) => (
+              <span
+                key={idx}
+                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
+              >
+                {label.name}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
+          {task.hasNewContent && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
+              {task.upcomingContent
+                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
+                : 'NEW'}
+            </span>
+          )}
+          {task.showStatus === 'ongoing' && !task.hasNewContent && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
+              Returning
+            </span>
+          )}
+          {task.showStatus === 'ended' && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
+              Ended
+            </span>
+          )}
+        </div>
+
+        {/* Upcoming content date */}
+        {task.upcomingContent && (
+          <div className="text-[10px] text-amber-400 mt-0.5">
+            {task.upcomingContent.title}
+            {task.upcomingContent.releaseDate && (
+              <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+            )}
+          </div>
+        )}
+
+        {/* Checklist progress */}
+        {task.checklistTotal && task.checklistTotal > 0 && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <span>{task.checklistChecked}/{task.checklistTotal}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Droppable Column for Task Board
+function DroppableTaskColumn({
+  category,
+  displayName,
+  tasks,
+  children,
+}: {
+  category: string;
+  displayName: string;
+  tasks: TaskItem[];
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `column-${category}`,
+    data: { category },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`w-[280px] flex-shrink-0 bg-[#101204] rounded-xl flex flex-col max-h-full transition-all
+        ${isOver ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
+    >
+      {/* Column header */}
+      <div className="px-3 py-2.5 flex items-center justify-between">
+        <h3 className="text-[#b6c2cf] text-sm font-semibold">
+          {displayName}
+        </h3>
+        <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
+          {tasks.length}
+        </span>
+      </div>
+
+      {/* Cards container */}
+      <div className="px-2 pb-2 space-y-2 overflow-y-auto flex-1 min-h-[100px]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Sortable wrapper for task cards with full rendering
+function SortableTaskCardWrapper({
+  task,
+  onSelect,
+  infoMatch,
+}: {
+  task: TaskItem;
+  onSelect: () => void;
+  infoMatch: { matched: boolean; info?: { label: string; value: string; expiryDate?: string }; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' };
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 1,
+  };
+
+  const colorMap: Record<string, string> = {
+    green: 'bg-green-600',
+    yellow: 'bg-yellow-500',
+    orange: 'bg-orange-500',
+    red: 'bg-red-500',
+    purple: 'bg-purple-500',
+    blue: 'bg-blue-500',
+    sky: 'bg-sky-500',
+    lime: 'bg-lime-500',
+    pink: 'bg-pink-500',
+    black: 'bg-gray-700',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={onSelect}
+      className={`rounded-lg px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing transition-all relative
+        ${task.hasNewContent
+          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
+          : 'bg-[#22272b] hover:bg-[#2c323a]'
+        }
+        ${task.checked ? 'opacity-60' : ''}
+        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
+    >
+      <div className="flex-1 min-w-0">
+        {/* Labels */}
+        {task.labels && task.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1">
+            {task.labels.map((label, idx) => (
+              <span
+                key={idx}
+                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
+              >
+                {label.name}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
+          {task.hasNewContent && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
+              {task.upcomingContent
+                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
+                : 'NEW'}
+            </span>
+          )}
+          {task.showStatus === 'ongoing' && !task.hasNewContent && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
+              Returning
+            </span>
+          )}
+          {task.showStatus === 'ended' && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
+              Ended
+            </span>
+          )}
+        </div>
+        {/* Upcoming content date */}
+        {task.upcomingContent && (
+          <div className="text-[10px] text-amber-400 mt-0.5">
+            {task.upcomingContent.title}
+            {task.upcomingContent.releaseDate && (
+              <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+            )}
+          </div>
+        )}
+        {/* Checklist progress */}
+        {task.checklistTotal && task.checklistTotal > 0 && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              {task.checklistChecked}/{task.checklistTotal}
+            </div>
+          </div>
+        )}
+        {infoMatch.matched && (infoMatch.info || infoMatch.profileMatch) && !task.checked && (
+          <div className="flex items-center gap-1.5 mt-1">
+            {infoMatch.status === 'valid' && (
+              <span className="text-xs text-green-400 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Valid until {new Date(infoMatch.profileMatch?.expiry || infoMatch.info?.expiryDate || '').toLocaleDateString()}
+              </span>
+            )}
+            {infoMatch.status === 'done' && (
+              <span className="text-xs text-green-400 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                {infoMatch.profileMatch?.label || infoMatch.info?.label}: {infoMatch.profileMatch?.value || infoMatch.info?.value}
+              </span>
+            )}
+            {infoMatch.status === 'expired' && (
+              <span className="text-xs text-red-400 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Expired - needs renewal!
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // Track whether initial load from localStorage has completed
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -3339,6 +3644,88 @@ export default function App() {
       }
       return goal;
     }));
+  };
+
+  // Handle task drag end - move between columns or reorder within column
+  const handleTaskDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || !activeGoalId) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Find the active task
+    const activeTask = activeGoal?.tasks.find(t => t.id === activeId);
+    if (!activeTask) return;
+
+    // Check if dropping on a column
+    if (overId.startsWith('column-')) {
+      const targetCategory = overId.replace('column-', '');
+      if (activeTask.category !== targetCategory) {
+        // Move task to new column
+        setGoals(prev => prev.map(goal => {
+          if (goal.id === activeGoalId) {
+            return {
+              ...goal,
+              tasks: goal.tasks.map(task =>
+                task.id === activeId
+                  ? { ...task, category: targetCategory, position: Date.now() }
+                  : task
+              ),
+            };
+          }
+          return goal;
+        }));
+      }
+      return;
+    }
+
+    // Check if dropping on another task
+    const overTask = activeGoal?.tasks.find(t => t.id === overId);
+    if (!overTask) return;
+
+    // If same category, reorder
+    if (activeTask.category === overTask.category) {
+      setGoals(prev => prev.map(goal => {
+        if (goal.id === activeGoalId) {
+          const categoryTasks = goal.tasks.filter(t => t.category === activeTask.category);
+          const otherTasks = goal.tasks.filter(t => t.category !== activeTask.category);
+
+          const oldIndex = categoryTasks.findIndex(t => t.id === activeId);
+          const newIndex = categoryTasks.findIndex(t => t.id === overId);
+
+          const reordered = arrayMove(categoryTasks, oldIndex, newIndex);
+          // Update positions based on new order
+          const withPositions = reordered.map((task, idx) => ({ ...task, position: idx }));
+
+          return { ...goal, tasks: [...otherTasks, ...withPositions] };
+        }
+        return goal;
+      }));
+    } else {
+      // Move to different category at specific position
+      const targetCategory = overTask.category;
+      setGoals(prev => prev.map(goal => {
+        if (goal.id === activeGoalId) {
+          const tasksWithoutActive = goal.tasks.filter(t => t.id !== activeId);
+          const targetCategoryTasks = tasksWithoutActive.filter(t => t.category === targetCategory);
+          const otherTasks = tasksWithoutActive.filter(t => t.category !== targetCategory);
+
+          const insertIndex = targetCategoryTasks.findIndex(t => t.id === overId);
+          const updatedTask = { ...activeTask, category: targetCategory };
+
+          // Insert at the correct position
+          targetCategoryTasks.splice(insertIndex, 0, updatedTask);
+
+          // Update positions
+          const withPositions = targetCategoryTasks.map((task, idx) => ({ ...task, position: idx }));
+
+          return { ...goal, tasks: [...otherTasks, ...withPositions] };
+        }
+        return goal;
+      }));
+    }
   };
 
   // Add a new task manually
@@ -5505,154 +5892,51 @@ export default function App() {
       {/* Kanban-style board layout - click and drag to scroll horizontally */}
       <div
         ref={boardScrollRef}
-        className="p-3 overflow-x-auto h-[calc(100vh-60px)] cursor-grab select-none"
+        className="p-3 overflow-x-auto h-[calc(100vh-60px)] select-none"
         onMouseDown={handleBoardMouseDown}
         onMouseMove={handleBoardMouseMove}
         onMouseUp={handleBoardMouseUp}
         onMouseLeave={handleBoardMouseLeave}
       >
-        <div className="flex gap-3 items-start h-full">
-          {Object.entries(groupedTasks).map(([category, tasks]) => {
-            // Get display name for category
-            const categoryDisplayNames: Record<string, string> = {
-              'to_watch': 'To Watch',
-              'watching': 'Watching',
-              'watched': 'Watched',
-              'dropped': 'Dropped',
-              'on_hold': 'On Hold',
-              'tasks': 'Tasks',
-              'custom': 'Custom',
-            };
-            const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragEnd={handleTaskDragEnd}
+        >
+          <div className="flex gap-3 items-start h-full">
+            {Object.entries(groupedTasks).map(([category, tasks]) => {
+              // Get display name for category
+              const categoryDisplayNames: Record<string, string> = {
+                'to_watch': 'To Watch',
+                'watching': 'Watching',
+                'watched': 'Watched',
+                'dropped': 'Dropped',
+                'on_hold': 'On Hold',
+                'tasks': 'Tasks',
+                'custom': 'Custom',
+              };
+              const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-            return (
-              <div key={category} className="w-[280px] flex-shrink-0 bg-[#101204] rounded-xl flex flex-col max-h-full">
-                {/* Column header */}
-                <div className="px-3 py-2.5 flex items-center justify-between">
-                  <h3 className="text-[#b6c2cf] text-sm font-semibold">
-                    {displayName}
-                  </h3>
-                  <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
-                    {tasks.length}
-                  </span>
-                </div>
-
-                {/* Cards container */}
-                <div className="px-2 pb-2 space-y-2 overflow-y-auto flex-1 min-h-0">
-                  {tasks.map(task => {
-                    const infoMatch = getTaskInfoMatch(task);
-                    return (
-                      <div
-                        key={task.id}
-                        onClick={() => setSelectedTaskId(task.id)}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className={`rounded-lg px-3 py-2 shadow-sm cursor-pointer transition-all
-                          ${task.hasNewContent
-                            ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
-                            : 'bg-[#22272b] hover:bg-[#2c323a]'
-                          }
-                          ${task.checked ? 'opacity-60' : ''}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          {/* Labels */}
-                          {task.labels && task.labels.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mb-1">
-                              {task.labels.map((label, idx) => {
-                                const colorMap: Record<string, string> = {
-                                  green: 'bg-green-600',
-                                  yellow: 'bg-yellow-500',
-                                  orange: 'bg-orange-500',
-                                  red: 'bg-red-500',
-                                  purple: 'bg-purple-500',
-                                  blue: 'bg-blue-500',
-                                  sky: 'bg-sky-500',
-                                  lime: 'bg-lime-500',
-                                  pink: 'bg-pink-500',
-                                  black: 'bg-gray-700',
-                                };
-                                return (
-                                  <span
-                                    key={idx}
-                                    className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
-                                  >
-                                    {label.name}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
-                            {task.hasNewContent && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
-                                {task.upcomingContent
-                                  ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
-                                  : 'NEW'}
-                              </span>
-                            )}
-                            {task.showStatus === 'ongoing' && !task.hasNewContent && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
-                                Returning
-                              </span>
-                            )}
-                            {task.showStatus === 'ended' && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
-                                Ended
-                              </span>
-                            )}
-                          </div>
-                          {/* Upcoming content date */}
-                          {task.upcomingContent && (
-                            <div className="text-[10px] text-amber-400 mt-0.5">
-                              {task.upcomingContent.title}
-                              {task.upcomingContent.releaseDate && (
-                                <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-                              )}
-                            </div>
-                          )}
-                          {/* Checklist progress */}
-                          {task.checklistTotal && task.checklistTotal > 0 && (
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                </svg>
-                                {task.checklistChecked}/{task.checklistTotal}
-                              </div>
-                            </div>
-                          )}
-                          {infoMatch.matched && (infoMatch.info || infoMatch.profileMatch) && !task.checked && (
-                            <div className="flex items-center gap-1.5 mt-1">
-                              {infoMatch.status === 'valid' && (
-                                <span className="text-xs text-green-400 flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  Valid until {new Date(infoMatch.profileMatch?.expiry || infoMatch.info?.expiryDate || '').toLocaleDateString()}
-                                </span>
-                              )}
-                              {infoMatch.status === 'done' && (
-                                <span className="text-xs text-green-400 flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  {infoMatch.profileMatch?.label || infoMatch.info?.label}: {infoMatch.profileMatch?.value || infoMatch.info?.value}
-                                </span>
-                              )}
-                              {infoMatch.status === 'expired' && (
-                                <span className="text-xs text-red-400 flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                  </svg>
-                                  Expired - needs renewal!
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              return (
+                <DroppableTaskColumn
+                  key={category}
+                  category={category}
+                  displayName={displayName}
+                  tasks={tasks}
+                >
+                  <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                    {tasks.map(task => {
+                      const infoMatch = getTaskInfoMatch(task);
+                      return (
+                        <SortableTaskCardWrapper
+                          key={task.id}
+                          task={task}
+                          onSelect={() => setSelectedTaskId(task.id)}
+                          infoMatch={infoMatch}
+                        />
+                      );
+                    })}
+                  </SortableContext>
 
                   {/* Add task button/form for this category */}
                   {addingTaskToCategory === category ? (
@@ -5712,27 +5996,27 @@ export default function App() {
                       Add a task
                     </button>
                   )}
-                </div>
-              </div>
-            );
-          })}
+                </DroppableTaskColumn>
+              );
+            })}
 
-          {/* Add another list button */}
-          <button
-            onClick={() => {
-              setAddingTaskToCategory('new_list');
-              setNewTaskText('');
-            }}
-            className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
-                     rounded-xl text-white text-sm font-medium
-                     transition-all flex items-center gap-2 h-fit"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add another list
-          </button>
-        </div>
+            {/* Add another list button */}
+            <button
+              onClick={() => {
+                setAddingTaskToCategory('new_list');
+                setNewTaskText('');
+              }}
+              className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
+                       rounded-xl text-white text-sm font-medium
+                       transition-all flex items-center gap-2 h-fit"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add another list
+            </button>
+          </div>
+        </DndContext>
       </div>
 
       {/* Task Detail Modal */}

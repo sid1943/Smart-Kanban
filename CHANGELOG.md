@@ -6,6 +6,13 @@ All notable changes to Smart Kanban will be documented in this file.
 
 ### Added
 
+- **Drag & Drop Task Cards**: Full drag and drop support for task cards
+  - Move cards between columns (e.g., "To Watch" to "Watching")
+  - Reorder cards within the same column
+  - Visual feedback with highlight ring when dragging
+  - Column highlights when card is dragged over it
+  - Uses dnd-kit library for smooth animations
+
 - **Generalized New Content Detection**: Extended "new content" detection to all content types
   - **TV Series**: Detects new seasons via TMDb `number_of_seasons` and `next_episode_to_air`
   - **Movies**: Detects sequels in franchises via TMDb `belongs_to_collection`
