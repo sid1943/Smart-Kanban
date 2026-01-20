@@ -244,6 +244,13 @@ Future improvements and features to be added.
 - [x] Column order persists to localStorage (v0.3.6)
 - [x] Cross-tab real-time sync via storage events (v0.3.6)
 - [x] 24-hour API cache for enrichment data (v0.3.6)
+- [x] Dynamic Workspace Blocks with grid layout (v0.3.7)
+- [x] Workspace auto-detection based on content type and goal type (v0.3.7)
+- [x] Workspace selection modal for new boards (v0.3.7)
+- [x] Collapsible/expandable workspace blocks (v0.3.7)
+- [x] Board mini-cards with progress indicators (v0.3.7)
+- [x] Activity tracking for boards (lastActivityAt) (v0.3.7)
+- [x] Migration of existing boards to workspaces (v0.3.7)
 
 ---
 

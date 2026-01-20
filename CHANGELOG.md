@@ -2,6 +2,74 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.7] - 2026-01-19
+
+### Added
+
+- **Dynamic Workspace Blocks**: Transformed dashboard into a grid of interactive workspace blocks
+  - 2-3 column responsive grid layout for workspaces
+  - Each block shows: icon, name, board count, task count, completion percentage
+  - Click to expand/collapse workspace and reveal boards within
+  - Smooth animations for expand/collapse transitions
+
+- **Enhanced Workspace Interface**: Extended workspace metadata
+  - Icon (emoji) for visual identification
+  - Description text for workspace purpose
+  - Display order for sorting
+  - Auto-categories for content type auto-assignment
+  - Goal types for goal-based auto-assignment
+
+- **Workspace Selection Modal**: Hybrid workflow for board assignment
+  - Auto-detects suggested workspace based on content type and goal type
+  - Modal shows all workspaces with suggested option highlighted
+  - Works for both new boards and Trello imports
+  - Skip option uses auto-detected workspace
+
+- **Board Mini-Cards**: Compact board previews within expanded workspaces
+  - Progress bar with completion percentage
+  - Task preview (first 2 tasks with checkboxes)
+  - Color-coded header matching workspace color
+  - Click to open board
+
+- **Activity Tracking**: Track recent board activity
+  - `lastActivityAt` timestamp updated on task changes
+  - Used for sorting boards by recency
+  - Enables "recent activity" summary in workspace blocks
+
+- **New Components**:
+  - `WorkspaceBlock.tsx` - Collapsible workspace block with stats
+  - `BoardMiniCard.tsx` - Compact board card for workspace grid
+  - `WorkspaceSelectModal.tsx` - Workspace picker for new boards
+
+- **Default Workspaces Enhanced**: Predefined workspaces with smart auto-assignment
+  - Leisure (movies, TV, anime, games, books, music)
+  - Travel (travel-type goals)
+  - Learning (learning-type goals)
+  - Projects (project, job goals)
+  - Personal (cooking, fitness, event, moving goals)
+
+### Changed
+
+- Home view now uses WorkspaceBlock components instead of flat board list
+- New board creation triggers workspace selection modal
+- Trello import triggers workspace selection after confirmation
+- StoredGoal interface extended with `workspaceId`, `workspaceAutoDetected`, `lastActivityAt`
+
+### Changed (Update)
+
+- Removed pre-loaded default workspaces - users now start with an empty workspace list
+- Added "Create New Workspace" option directly in the workspace selection modal
+- When creating a workspace with a pending board, the board is automatically assigned
+- Added empty state UI when no workspaces exist with prompt to create one
+- Added "Unassigned Boards" section for boards not assigned to any workspace
+
+### Migration
+
+- Existing boards without `workspaceId` are automatically migrated on load
+- Migration uses auto-detection based on content type and goal type
+- `workspaceAutoDetected` flag set to true for migrated boards
+- Boards without a workspace are shown in "Unassigned Boards" section
+
 ## [0.3.6] - 2026-01-19
 
 ### Added

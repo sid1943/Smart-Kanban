@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNewContentScanner } from './hooks/useNewContentScanner';
 import { enrichFromTMDb } from './engine/enrichment/tmdb';
-import { UpcomingContent } from './engine/types';
+import { ContentType, UpcomingContent } from './engine/types';
 import { getContentKindLabel, isUpcoming, getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
 import { getOrchestrator } from './engine/agents/AgentOrchestrator';
+import { parseTrelloExport } from './features/trelloImport';
+import { Attachment, Checklist, ChecklistItem, Comment, ExtractedLink, TaskItem, TaskLabel } from './types/tasks';
+import { ProfileCategory, ProfileField, ProfileFieldData } from './types/profile';
+import { TrelloBoard } from './types/trello';
 import {
   DndContext,
   DragOverlay,
@@ -19,6 +23,9 @@ import {
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
 import TaskDetailModal from './components/TaskDetailModal';
+import ProfileView from './components/ProfileView';
+import { WorkspaceBlock } from './components/WorkspaceBlock';
+import { WorkspaceSelectModal } from './components/WorkspaceSelectModal';
 import {
   arrayMove,
   SortableContext,
@@ -28,85 +35,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-
-interface TaskLabel {
-  name: string;
-  color: string;
-}
-
-interface ChecklistItem {
-  id: string;
-  text: string;
-  checked: boolean;
-}
-
-interface Checklist {
-  id: string;
-  name: string;
-  items: ChecklistItem[];
-}
-
-interface Attachment {
-  id: string;
-  name: string;
-  url: string;
-  type?: string;
-  isUpload?: boolean;
-}
-
-interface ExtractedLink {
-  url: string;
-  text?: string;
-  source: 'description' | 'attachment' | 'name' | 'comment' | 'checklist';
-  cardTitle?: string;  // The card/task title this link belongs to
-  checklistName?: string;  // If from a checklist, which checklist
-}
-
-interface Comment {
-  id: string;
-  text: string;
-  author: string;
-  date: string;
-}
-
-// Content types for Smart Insights
-type ContentType = 'tv_series' | 'movie' | 'anime' | 'book' | 'game' | 'music' | 'unknown';
-
-interface TaskItem {
-  id: string;
-  text: string;
-  checked: boolean;
-  category?: string;
-  link?: string;
-  linkText?: string;
-  description?: string;
-  dueDate?: string;
-  startDate?: string;
-  priority?: 'low' | 'medium' | 'high';
-  labels?: TaskLabel[];
-  checklistTotal?: number;
-  checklistChecked?: number;
-  checklists?: Checklist[];
-  attachments?: Attachment[];
-  comments?: Comment[];
-  coverColor?: string;
-  coverImage?: string;
-  assignees?: string[];
-  position?: number;
-  links?: ExtractedLink[];
-  // Smart Content Engine fields
-  contentType?: ContentType;
-  contentTypeConfidence?: number;
-  contentTypeManual?: boolean; // true if user manually set it
-  hasNewContent?: boolean; // true if new seasons/content detected from API
-  upcomingContent?: UpcomingContent;
-  showStatus?: 'ongoing' | 'ended' | 'upcoming';
-  // Cached enrichment data (persisted to avoid re-fetching)
-  cachedEnrichment?: {
-    data: import('./engine/types').EnrichedData;
-    fetchedAt: string; // ISO timestamp
-  };
-}
 
 // User's personal info for smart task suggestions
 interface UserInfoItem {
@@ -231,109 +159,6 @@ const parseICSDateTime = (value: string): Date | null => {
   }
 };
 
-// Trello JSON types
-interface TrelloCheckItem {
-  id: string;
-  name: string;
-  state: 'complete' | 'incomplete';
-  pos: number;
-}
-
-interface TrelloChecklist {
-  id: string;
-  idCard: string;
-  name: string;
-  pos: number;
-  checkItems: TrelloCheckItem[];
-}
-
-interface TrelloLabel {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface TrelloAttachment {
-  id: string;
-  name: string;
-  url: string;
-  date: string;
-  mimeType?: string;
-  isUpload: boolean;
-}
-
-interface TrelloComment {
-  id: string;
-  idMemberCreator: string;
-  data: {
-    text: string;
-    card?: { id: string; name: string };
-  };
-  date: string;
-  type: string;
-}
-
-interface TrelloMember {
-  id: string;
-  fullName: string;
-  username: string;
-  avatarUrl?: string;
-}
-
-interface TrelloCard {
-  id: string;
-  name: string;
-  desc: string;
-  idList: string;
-  due: string | null;
-  start: string | null;
-  dueComplete: boolean;
-  closed: boolean;
-  pos: number;
-  idChecklists: string[];
-  idMembers: string[];
-  labels: TrelloLabel[];
-  cover?: {
-    color?: string;
-    idAttachment?: string;
-    idUploadedBackground?: string;
-    size?: string;
-    brightness?: string;
-  };
-  badges?: {
-    checkItems: number;
-    checkItemsChecked: number;
-    comments: number;
-    attachments: number;
-    description: boolean;
-  };
-  attachments?: TrelloAttachment[];
-}
-
-interface TrelloList {
-  id: string;
-  name: string;
-  closed: boolean;
-  pos: number;
-}
-
-interface TrelloBoard {
-  name: string;
-  desc: string;
-  url?: string;
-  shortUrl?: string;
-  prefs?: {
-    background?: string;
-    backgroundImage?: string;
-    backgroundImageScaled?: Array<{ url: string; width: number; height: number }>;
-  };
-  lists: TrelloList[];
-  cards: TrelloCard[];
-  checklists: TrelloChecklist[];
-  actions?: TrelloComment[];
-  members?: TrelloMember[];
-}
-
 // Parse Trello JSON export
 interface TrelloImportResult {
   boardName: string;
@@ -352,75 +177,68 @@ interface Workspace {
   name: string;
   color: string;
   backgroundImage?: string;
+  icon?: string;                      // emoji/icon for workspace
+  description?: string;               // subtitle/description
+  order?: number;                     // display order
+  autoCategories?: ContentType[];     // content types that auto-assign to this workspace
+  goalTypes?: string[];               // goal types that auto-assign to this workspace
 }
 
-// Default workspaces
-const defaultWorkspaces: Workspace[] = [
-  { id: 'personal', name: 'Personal', color: '#0079bf' },
-  { id: 'travel', name: 'Travel Planning', color: '#519839' },
-  { id: 'learning', name: 'Learning & Growth', color: '#b04632' },
-  { id: 'projects', name: 'Projects', color: '#89609e' },
-];
-
-// Profile field template definition
-interface ProfileField {
-  id: string;
-  label: string;
-  category: string; // Changed to string to allow custom categories
-  hasExpiry: boolean;
-  hasDocument: boolean;
-  placeholder: string;
-  icon: string;
+// Workspace summary for dashboard display
+interface WorkspaceSummary {
+  boardCount: number;
+  totalTasks: number;
+  completedTasks: number;
+  recentActivity: {
+    text: string;
+    timestamp: number;
+  }[];
 }
 
-// Profile category definition
-interface ProfileCategory {
-  id: string;
-  name: string;
-  icon: string;
-}
+// Default workspaces - start empty, user creates their own
+const defaultWorkspaces: Workspace[] = [];
 
 // Predefined profile templates
 const profileTemplates: ProfileField[] = [
   // Travel Documents
-  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: '🛂' },
-  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: '🏳️' },
-  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: '🇺🇸' },
-  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: '🇪🇺' },
-  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: '🛡️' },
-  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: '✈️' },
+  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: 'ðŸ›‚' },
+  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: 'ðŸ³ï¸' },
+  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: 'ðŸ‡ºðŸ‡¸' },
+  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: 'ðŸ‡ªðŸ‡º' },
+  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: 'ðŸ›¡ï¸' },
+  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: 'âœˆï¸' },
 
   // Identity Documents
-  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: '🚗' },
-  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: '🪪' },
-  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: '📜' },
+  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: 'ðŸš—' },
+  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: 'ðŸªª' },
+  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: 'ðŸ“œ' },
 
   // Health
-  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: '🏥' },
-  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: '🩸' },
-  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: '⚠️' },
-  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: '💉' },
+  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: 'ðŸ¥' },
+  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: 'ðŸ©¸' },
+  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: 'âš ï¸' },
+  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: 'ðŸ’‰' },
 
   // Skills & Tools
-  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: '🐍' },
-  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: '🟢' },
-  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: '💻' },
-  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: '📦' },
+  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: 'ðŸ' },
+  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: 'ðŸŸ¢' },
+  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: 'ðŸ’»' },
+  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: 'ðŸ“¦' },
 
   // Education & Certifications
-  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: '🎓' },
-  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: '📋' },
-  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: '📋' },
-  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: '🗣️' },
+  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: 'ðŸŽ“' },
+  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: 'ðŸ“‹' },
+  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: 'ðŸ“‹' },
+  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: 'ðŸ—£ï¸' },
 ];
 
 // Default profile categories
 const defaultProfileCategories: ProfileCategory[] = [
-  { id: 'travel', name: 'Travel Documents', icon: '✈️' },
-  { id: 'identity', name: 'Identity Documents', icon: '🪪' },
-  { id: 'health', name: 'Health Information', icon: '🏥' },
-  { id: 'skills', name: 'Skills & Tools', icon: '💻' },
-  { id: 'education', name: 'Education & Certifications', icon: '🎓' },
+  { id: 'travel', name: 'Travel Documents', icon: 'âœˆï¸' },
+  { id: 'identity', name: 'Identity Documents', icon: 'ðŸªª' },
+  { id: 'health', name: 'Health Information', icon: 'ðŸ¥' },
+  { id: 'skills', name: 'Skills & Tools', icon: 'ðŸ’»' },
+  { id: 'education', name: 'Education & Certifications', icon: 'ðŸŽ“' },
 ];
 
 // Keywords to match tasks with user info
@@ -517,8 +335,8 @@ const destinationResources: Record<string, {
       { name: 'Eiffel Tower', url: 'https://www.toureiffel.paris/en' },
       { name: 'Louvre Museum', url: 'https://www.louvre.fr/en' },
       { name: 'Palace of Versailles', url: 'https://en.chateauversailles.fr/' },
-      { name: 'Notre-Dame & Île de la Cité', url: 'https://www.notredamedeparis.fr/en/' },
-      { name: 'Montmartre & Sacré-Cœur', url: 'https://www.sacre-coeur-montmartre.com/english/' },
+      { name: 'Notre-Dame & ÃŽle de la CitÃ©', url: 'https://www.notredamedeparis.fr/en/' },
+      { name: 'Montmartre & SacrÃ©-CÅ“ur', url: 'https://www.sacre-coeur-montmartre.com/english/' },
     ],
     restaurants: [
       { name: 'La Fourchette (The Fork)', url: 'https://www.thefork.com/' },
@@ -529,7 +347,7 @@ const destinationResources: Record<string, {
       'Book Eiffel Tower tickets in advance',
       'Get Museum Pass for multiple attractions',
       'Metro is the best way to get around Paris',
-      'Learn: Bonjour, Merci, S\'il vous plaît',
+      'Learn: Bonjour, Merci, S\'il vous plaÃ®t',
     ],
   },
   italy: {
@@ -1752,6 +1570,9 @@ interface StoredGoal extends GoalState {
   backgroundImage?: string;
   detectedCategory?: string;
   columnOrder?: string[]; // Persisted order of columns/lists
+  workspaceId?: string;              // assigned workspace
+  workspaceAutoDetected?: boolean;   // was this auto-assigned?
+  lastActivityAt?: number;           // for recent activity tracking
 }
 
 // Default board background images
@@ -1768,6 +1589,18 @@ const boardBackgrounds = [
   'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=400&q=80', // Work desk
 ];
 
+const MAX_BOARD_BG_WIDTH = 1200;
+const MAX_PROFILE_DOCUMENT_BYTES = 2 * 1024 * 1024;
+
+function scaleBackgroundUrl(url: string, width: number = MAX_BOARD_BG_WIDTH): string {
+  if (!url) return url;
+  return url.replace(/w=\d+/, `w=${width}`);
+}
+
+function getBackgroundThumbnail(url: string): string {
+  return scaleBackgroundUrl(url, 200);
+}
+
 type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal';
 
 // Board/Workspace types
@@ -1781,15 +1614,15 @@ interface _Board {
 
 // Category columns for Trello-style board
 const categoryColumns = [
-  { id: 'travel', title: 'Travel', emoji: '✈️' },
-  { id: 'learning', title: 'Learning', emoji: '📚' },
-  { id: 'fitness', title: 'Fitness', emoji: '💪' },
-  { id: 'cooking', title: 'Cooking', emoji: '🍳' },
-  { id: 'job', title: 'Career', emoji: '💼' },
-  { id: 'event', title: 'Events', emoji: '🎉' },
-  { id: 'project', title: 'Projects', emoji: '🚀' },
-  { id: 'moving', title: 'Moving', emoji: '📦' },
-  { id: 'other', title: 'Other', emoji: '📋' },
+  { id: 'travel', title: 'Travel', emoji: 'âœˆï¸' },
+  { id: 'learning', title: 'Learning', emoji: 'ðŸ“š' },
+  { id: 'fitness', title: 'Fitness', emoji: 'ðŸ’ª' },
+  { id: 'cooking', title: 'Cooking', emoji: 'ðŸ³' },
+  { id: 'job', title: 'Career', emoji: 'ðŸ’¼' },
+  { id: 'event', title: 'Events', emoji: 'ðŸŽ‰' },
+  { id: 'project', title: 'Projects', emoji: 'ðŸš€' },
+  { id: 'moving', title: 'Moving', emoji: 'ðŸ“¦' },
+  { id: 'other', title: 'Other', emoji: 'ðŸ“‹' },
 ];
 
 // Sortable Card Component
@@ -2063,7 +1896,7 @@ function SortableTaskCard({
           <div className="text-[10px] text-amber-400 mt-0.5">
             {task.upcomingContent.title}
             {task.upcomingContent.releaseDate && (
-              <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
             )}
           </div>
         )}
@@ -2257,7 +2090,7 @@ function SortableTaskCardWrapper({
           <div className="text-[10px] text-amber-400 mt-0.5">
             {task.upcomingContent.title}
             {task.upcomingContent.releaseDate && (
-              <> • {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
             )}
           </div>
         )}
@@ -2334,14 +2167,10 @@ export default function App() {
   const [newInfoCategory, setNewInfoCategory] = useState<UserInfoItem['category']>('personal');
 
   // Profile data state - stores values keyed by template field ID
-  const [profileData, setProfileData] = useState<Record<string, {
-    value: string;
-    expiryDate?: string;
-    documentName?: string;
-    documentData?: string;
-    documentType?: string;
-  }>>({});
+  const [profileData, setProfileData] = useState<Record<string, ProfileFieldData>>({});
+  const [profileDocumentErrors, setProfileDocumentErrors] = useState<Record<string, string>>({});
   const [activeProfileCategory, setActiveProfileCategory] = useState<string>('travel');
+  const baseProfileTemplateIds = useMemo(() => new Set(profileTemplates.map(t => t.id)), []);
 
 
   // Form state for creating new goals
@@ -2383,6 +2212,7 @@ export default function App() {
   const [pendingImportGoal, setPendingImportGoal] = useState<StoredGoal | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, status: '' });
+  const [importMinimized, setImportMinimized] = useState(false);
 
   // Workspace customization state
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces);
@@ -2392,19 +2222,25 @@ export default function App() {
   const [newWorkspaceColor, setNewWorkspaceColor] = useState('#0079bf');
   const [newWorkspaceImage, setNewWorkspaceImage] = useState('');
 
+  // Dynamic Workspace Blocks state
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
+  const [showWorkspaceSelectModal, setShowWorkspaceSelectModal] = useState(false);
+  const [pendingBoardForWorkspace, setPendingBoardForWorkspace] = useState<StoredGoal | null>(null);
+  const [suggestedWorkspaceId, setSuggestedWorkspaceId] = useState<string | null>(null);
+
   // Profile customization state
   const [customProfileCategories, setCustomProfileCategories] = useState<ProfileCategory[]>(defaultProfileCategories);
   const [customProfileFields, setCustomProfileFields] = useState<ProfileField[]>(profileTemplates);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showAddFieldModal, setShowAddFieldModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('ðŸ“');
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [newFieldCategory, setNewFieldCategory] = useState('');
   const [newFieldHasExpiry, setNewFieldHasExpiry] = useState(false);
   const [newFieldHasDocument, setNewFieldHasDocument] = useState(false);
   const [newFieldPlaceholder, setNewFieldPlaceholder] = useState('');
-  const [newFieldIcon, setNewFieldIcon] = useState('📝');
+  const [newFieldIcon, setNewFieldIcon] = useState('ðŸ“');
 
   // Drag and drop state
   const [columnOrder, setColumnOrder] = useState<string[]>(categoryColumns.map(c => c.id));
@@ -2549,14 +2385,50 @@ export default function App() {
     }
   };
 
+  // Helper function for workspace auto-detection during migration
+  const autoDetectWorkspaceForMigration = (goal: StoredGoal, ws: Workspace[]): string | undefined => {
+    // If no workspaces exist, return undefined (board will be unassigned)
+    if (ws.length === 0) return undefined;
+
+    // Check content type from tasks
+    const contentType = goal.tasks.find(t => t.contentType)?.contentType;
+    if (contentType) {
+      const workspace = ws.find(w => w.autoCategories?.includes(contentType));
+      if (workspace) return workspace.id;
+    }
+    // Check goal type
+    const workspace = ws.find(w => w.goalTypes?.includes(goal.type));
+    if (workspace) return workspace.id;
+    // Default to first workspace if available
+    return ws[0]?.id;
+  };
+
   // Load saved data on mount
   useEffect(() => {
     const saved = localStorage.getItem('smart_task_hub_v3');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+
+        // Get workspaces first for migration
+        const loadedWorkspaces = parsed.workspaces && Array.isArray(parsed.workspaces)
+          ? parsed.workspaces
+          : defaultWorkspaces;
+
         if (parsed.goals && Array.isArray(parsed.goals)) {
-          setGoals(parsed.goals);
+          // Migrate goals without workspaceId
+          const migratedGoals = parsed.goals.map((goal: StoredGoal) => {
+            if (!goal.workspaceId) {
+              return {
+                ...goal,
+                workspaceId: autoDetectWorkspaceForMigration(goal, loadedWorkspaces),
+                workspaceAutoDetected: true,
+                lastActivityAt: goal.lastActivityAt || goal.createdAt,
+              };
+            }
+            return goal;
+          });
+          setGoals(migratedGoals);
         }
         if (parsed.userInfo && Array.isArray(parsed.userInfo)) {
           setUserInfo(parsed.userInfo);
@@ -2755,6 +2627,14 @@ export default function App() {
 
   // Handle document upload for profile field
   const handleProfileDocumentUpload = (fieldId: string, file: File) => {
+    if (file.size > MAX_PROFILE_DOCUMENT_BYTES) {
+      setProfileDocumentErrors(prev => ({
+        ...prev,
+        [fieldId]: `File too large. Max size is ${Math.round(MAX_PROFILE_DOCUMENT_BYTES / (1024 * 1024))} MB.`,
+      }));
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const base64 = e.target?.result as string;
@@ -2767,6 +2647,12 @@ export default function App() {
           documentType: file.type,
         }
       }));
+      setProfileDocumentErrors(prev => {
+        if (!prev[fieldId]) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -2782,6 +2668,12 @@ export default function App() {
         documentType: undefined,
       }
     }));
+    setProfileDocumentErrors(prev => {
+      if (!prev[fieldId]) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
   };
 
   // Get profile completion percentage
@@ -2804,6 +2696,21 @@ export default function App() {
     setNewWorkspaceColor('#0079bf');
     setNewWorkspaceImage('');
     setShowWorkspaceModal(false);
+
+    // If there's a pending board, assign it to the new workspace
+    if (pendingBoardForWorkspace) {
+      const goalWithWorkspace: StoredGoal = {
+        ...pendingBoardForWorkspace,
+        workspaceId: newWorkspace.id,
+        workspaceAutoDetected: false,
+      };
+      setGoals(prev => [...prev, goalWithWorkspace]);
+      setActiveGoalId(goalWithWorkspace.id);
+      setSelectedBackground(null);
+      setViewMode('tasks');
+      setPendingBoardForWorkspace(null);
+      setSuggestedWorkspaceId(null);
+    }
   };
 
   const handleUpdateWorkspace = () => {
@@ -2842,7 +2749,7 @@ export default function App() {
     };
     setCustomProfileCategories(prev => [...prev, newCategory]);
     setNewCategoryName('');
-    setNewCategoryIcon('📁');
+    setNewCategoryIcon('ðŸ“');
     setShowAddCategoryModal(false);
   };
 
@@ -2870,7 +2777,7 @@ export default function App() {
     setNewFieldHasExpiry(false);
     setNewFieldHasDocument(false);
     setNewFieldPlaceholder('');
-    setNewFieldIcon('📝');
+    setNewFieldIcon('ðŸ“');
     setShowAddFieldModal(false);
   };
 
@@ -2994,36 +2901,6 @@ export default function App() {
       .join(' ');
   };
 
-  // Helper to extract URLs from text (description, comments, etc.)
-  const extractUrlsFromText = (text: string): Array<{ url: string; text?: string }> => {
-    const links: Array<{ url: string; text?: string }> = [];
-
-    // Match markdown links: [text](url)
-    const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    let match: RegExpExecArray | null;
-    while ((match = markdownLinkRegex.exec(text)) !== null) {
-      links.push({ text: match[1], url: match[2] });
-    }
-
-    // Match plain URLs (not already captured in markdown)
-    const urlRegex = /(?<!\]\()https?:\/\/[^\s\])<>]+/g;
-    while ((match = urlRegex.exec(text)) !== null) {
-      const urlMatch = match[0];
-      // Check if this URL wasn't already captured as a markdown link
-      if (!links.some(l => l.url === urlMatch)) {
-        // Try to extract domain as text
-        try {
-          const domain = new URL(urlMatch).hostname.replace('www.', '');
-          links.push({ url: urlMatch, text: domain });
-        } catch {
-          links.push({ url: urlMatch });
-        }
-      }
-    }
-
-    return links;
-  };
-
   // Helper to render description text with clickable links
   const renderDescriptionWithLinks = (text: string, taskTitle?: string): React.ReactNode => {
     if (!text) return null;
@@ -3143,205 +3020,17 @@ export default function App() {
         }
 
         // Get open lists only, sorted by position
-        const openLists = data.lists.filter(l => !l.closed).sort((a, b) => a.pos - b.pos);
-
-        // Create tasks from cards - each card becomes a task, list name becomes category
-        const tasks: TaskItem[] = [];
-
-        // Create a list ID to name mapping
-        const listMap = new Map<string, string>();
-        openLists.forEach(list => listMap.set(list.id, list.name));
-
-        // Create checklist ID to checklist mapping
-        const checklistMap = new Map<string, TrelloChecklist>();
-        (data.checklists || []).forEach(cl => checklistMap.set(cl.id, cl));
-
-        // Also create a card ID to checklists mapping (fallback for when idChecklists is empty)
-        const checklistsByCard = new Map<string, TrelloChecklist[]>();
-        (data.checklists || []).forEach(cl => {
-          const existing = checklistsByCard.get(cl.idCard) || [];
-          existing.push(cl);
-          checklistsByCard.set(cl.idCard, existing);
-        });
-
-        // Create member ID to name mapping
-        const memberMap = new Map<string, string>();
-        (data.members || []).forEach(m => memberMap.set(m.id, m.fullName || m.username));
-
-        // Get comments grouped by card ID
-        const commentsByCard = new Map<string, Comment[]>();
-        (data.actions || [])
-          .filter(a => a.type === 'commentCard' && a.data.card)
-          .forEach(action => {
-            const cardId = action.data.card?.id;
-            if (cardId) {
-              const existing = commentsByCard.get(cardId) || [];
-              existing.push({
-                id: action.id,
-                text: action.data.text,
-                author: memberMap.get(action.idMemberCreator) || 'Unknown',
-                date: action.date,
-              });
-              commentsByCard.set(cardId, existing);
-            }
-          });
-
-        // Process cards as tasks, sorted by position within each list
-        const sortedCards = data.cards
-          .filter(c => !c.closed)
-          .sort((a, b) => a.pos - b.pos);
-
-        sortedCards.forEach(card => {
-          const listName = listMap.get(card.idList) || 'imported';
-          const categoryKey = listName.toLowerCase().replace(/\s+/g, '_');
-
-          // Convert Trello labels to task labels
-          const taskLabels: TaskLabel[] = (card.labels || []).map(label => ({
-            name: label.name || label.color,
-            color: label.color,
-          }));
-
-          // Get full checklists for this card
-          // Try via card.idChecklists first, then fallback to checklistsByCard mapping
-          let rawChecklists: TrelloChecklist[] = [];
-
-          if (card.idChecklists && card.idChecklists.length > 0) {
-            rawChecklists = card.idChecklists
-              .map(clId => checklistMap.get(clId))
-              .filter((cl): cl is TrelloChecklist => cl !== undefined);
-          } else {
-            // Fallback: find checklists by card ID
-            rawChecklists = checklistsByCard.get(card.id) || [];
-          }
-
-          const cardChecklists: Checklist[] = rawChecklists
-            .sort((a, b) => a.pos - b.pos)
-            .map(cl => ({
-              id: cl.id,
-              name: cl.name,
-              items: (cl.checkItems || [])
-                .sort((a, b) => a.pos - b.pos)
-                .map(item => ({
-                  id: item.id,
-                  text: item.name,
-                  checked: item.state === 'complete',
-                })),
-            }));
-
-          // Calculate checklist totals
-          const checklistTotal = cardChecklists.reduce((sum, cl) => sum + cl.items.length, 0);
-          const checklistChecked = cardChecklists.reduce(
-            (sum, cl) => sum + cl.items.filter(i => i.checked).length,
-            0
-          );
-
-          // Get attachments and identify link vs uploaded attachments
-          const attachments: Attachment[] = (card.attachments || []).map(att => ({
-            id: att.id,
-            name: att.name,
-            url: att.url,
-            type: att.mimeType,
-            isUpload: att.isUpload,
-          }));
-
-          // Get comments for this card
-          const comments = commentsByCard.get(card.id) || [];
-
-          // Get assigned members
-          const assignees = (card.idMembers || [])
-            .map(mId => memberMap.get(mId))
-            .filter((name): name is string => name !== undefined);
-
-          // Get cover info
-          let coverColor: string | undefined;
-          let coverImage: string | undefined;
-          if (card.cover) {
-            coverColor = card.cover.color;
-            if (card.cover.idAttachment) {
-              const coverAtt = (card.attachments || []).find(a => a.id === card.cover?.idAttachment);
-              coverImage = coverAtt?.url;
-            }
-          }
-
-          // Extract all links from various sources
-          const extractedLinks: ExtractedLink[] = [];
-          const cardTitle = card.name;
-
-          // 1. Links from card name
-          const nameLinks = extractUrlsFromText(card.name);
-          nameLinks.forEach(l => extractedLinks.push({ ...l, source: 'name', cardTitle }));
-
-          // 2. Links from description
-          if (card.desc) {
-            const descLinks = extractUrlsFromText(card.desc);
-            descLinks.forEach(l => extractedLinks.push({ ...l, source: 'description', cardTitle }));
-          }
-
-          // 3. Link attachments (not uploaded files)
-          (card.attachments || [])
-            .filter(att => !att.isUpload)
-            .forEach(att => {
-              // Don't duplicate if already extracted
-              if (!extractedLinks.some(l => l.url === att.url)) {
-                extractedLinks.push({
-                  url: att.url,
-                  text: att.name,
-                  source: 'attachment',
-                  cardTitle,
-                });
-              }
-            });
-
-          // 4. Links from comments
-          comments.forEach(comment => {
-            const commentLinks = extractUrlsFromText(comment.text);
-            commentLinks.forEach(l => {
-              if (!extractedLinks.some(el => el.url === l.url)) {
-                extractedLinks.push({ ...l, source: 'comment', cardTitle });
-              }
-            });
-          });
-
-          // 5. Links from checklist items
-          cardChecklists.forEach(checklist => {
-            checklist.items.forEach(item => {
-              const itemLinks = extractUrlsFromText(item.text);
-              itemLinks.forEach(l => {
-                if (!extractedLinks.some(el => el.url === l.url)) {
-                  extractedLinks.push({
-                    ...l,
-                    source: 'checklist',
-                    cardTitle,
-                    checklistName: checklist.name,
-                  });
-                }
-              });
-            });
-          });
-
-          // Auto-mark as done if all checklist items are complete
-          const isFullyComplete = checklistTotal > 0 && checklistChecked === checklistTotal;
-          tasks.push({
-            id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            text: card.name,
-            checked: card.dueComplete || isFullyComplete || false,
-            category: categoryKey,
-            description: card.desc || undefined,
-            labels: taskLabels.length > 0 ? taskLabels : undefined,
-            checklistTotal: checklistTotal > 0 ? checklistTotal : undefined,
-            checklistChecked: checklistTotal > 0 ? checklistChecked : undefined,
-            checklists: cardChecklists.length > 0 ? cardChecklists : undefined,
-            dueDate: card.due || undefined,
-            startDate: card.start || undefined,
-            attachments: attachments.length > 0 ? attachments : undefined,
-            comments: comments.length > 0 ? comments : undefined,
-            assignees: assignees.length > 0 ? assignees : undefined,
-            coverColor,
-            coverImage,
-            position: card.pos,
-            links: extractedLinks.length > 0 ? extractedLinks : undefined,
-          });
-        });
+        const parsed = parseTrelloExport(data, { maxBackgroundWidth: MAX_BOARD_BG_WIDTH });
+        const {
+          tasks,
+          openLists,
+          goalType,
+          detectedBoardType,
+          boardBackgroundImage,
+          stats,
+          boardName,
+          boardUrl,
+        } = parsed;
 
         // Enrich tasks with TMDb data for TV series/media cards
         // Helper to extract year from title like "Show Name (2019- )"
@@ -3482,108 +3171,15 @@ export default function App() {
 
         setImportProgress({ current: tasksToEnrich.length, total: tasksToEnrich.length, status: 'Finalizing import...' });
 
-        // Smart board type detection based on board name and content
-        const boardNameLower = (data.name || '').toLowerCase();
-        const allCardText = data.cards.map(c => c.name.toLowerCase()).join(' ');
-        const allListNames = openLists.map(l => l.name.toLowerCase()).join(' ');
-
-        // Detect if this is a media (TV/Movies/Anime) board
-        const isMediaBoard =
-          boardNameLower.match(/\b(tv|show|series|movie|film|anime|watch|drama|episode)\b/) ||
-          allListNames.match(/\b(to watch|watching|watched|backlog|queue|completed|finished|dropped)\b/) ||
-          allCardText.match(/\b(season|episode|s\d+e\d+|ep\s*\d+)\b/);
-
-        // Detect specific board types
-        let goalType = 'media'; // Default for imported boards
-        let detectedBoardType = 'general';
-
-        if (isMediaBoard) {
-          detectedBoardType = 'media';
-          if (boardNameLower.includes('anime')) detectedBoardType = 'anime';
-          else if (boardNameLower.includes('movie') || boardNameLower.includes('film')) detectedBoardType = 'movies';
-          else if (boardNameLower.match(/\b(tv|show|series|drama)\b/)) detectedBoardType = 'tvshows';
-        } else if (boardNameLower.includes('travel') || boardNameLower.includes('trip')) {
-          goalType = 'travel';
-          detectedBoardType = 'travel';
-        } else if (boardNameLower.includes('learn') || boardNameLower.includes('study')) {
-          goalType = 'learning';
-          detectedBoardType = 'learning';
-        } else if (boardNameLower.includes('fitness') || boardNameLower.includes('health')) {
-          goalType = 'fitness';
-          detectedBoardType = 'fitness';
-        } else if (boardNameLower.includes('cook') || boardNameLower.includes('recipe')) {
-          goalType = 'cooking';
-          detectedBoardType = 'cooking';
-        } else if (boardNameLower.includes('work') || boardNameLower.includes('job')) {
-          goalType = 'job';
-          detectedBoardType = 'work';
-        } else if (boardNameLower.includes('book') || boardNameLower.includes('read')) {
-          goalType = 'media';
-          detectedBoardType = 'books';
-        } else if (boardNameLower.includes('game') || boardNameLower.includes('gaming')) {
-          goalType = 'media';
-          detectedBoardType = 'games';
-        }
-
-        // For media boards, normalize common category names
-        if (detectedBoardType === 'media' || detectedBoardType === 'tvshows' ||
-            detectedBoardType === 'movies' || detectedBoardType === 'anime' ||
-            detectedBoardType === 'books' || detectedBoardType === 'games') {
-          // Map common list names to standardized categories
-          const categoryMapping: Record<string, string> = {
-            'to watch': 'to_watch',
-            'want to watch': 'to_watch',
-            'backlog': 'to_watch',
-            'queue': 'to_watch',
-            'plan to watch': 'to_watch',
-            'watching': 'watching',
-            'in progress': 'watching',
-            'currently watching': 'watching',
-            'started': 'watching',
-            'watched': 'watched',
-            'completed': 'watched',
-            'finished': 'watched',
-            'done': 'watched',
-            'dropped': 'dropped',
-            'on hold': 'on_hold',
-            'paused': 'on_hold',
-          };
-
-          // Update task categories based on mapping
-          tasks.forEach(task => {
-            const originalCat = task.category || '';
-            const normalizedCat = originalCat.toLowerCase().replace(/_/g, ' ');
-            if (categoryMapping[normalizedCat]) {
-              task.category = categoryMapping[normalizedCat];
-            }
-          });
-        }
-
-        // Get board background image if available
-        let boardBackgroundImage: string | undefined;
-        if (data.prefs?.backgroundImageScaled && data.prefs.backgroundImageScaled.length > 0) {
-          // Get the largest available image
-          const sorted = [...data.prefs.backgroundImageScaled].sort((a, b) => b.width - a.width);
-          boardBackgroundImage = sorted[0].url;
-        } else if (data.prefs?.backgroundImage) {
-          boardBackgroundImage = data.prefs.backgroundImage;
-        }
-
-        // Calculate import stats
-        const totalChecklists = tasks.reduce((sum, t) => sum + (t.checklists?.length || 0), 0);
-        const totalAttachments = tasks.reduce((sum, t) => sum + (t.attachments?.length || 0), 0);
-        const totalComments = tasks.reduce((sum, t) => sum + (t.comments?.length || 0), 0);
-        const totalLinks = tasks.reduce((sum, t) => sum + (t.links?.length || 0), 0);
-
         // Create one goal for the entire board
         const newGoal: StoredGoal = {
           id: `goal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          goal: data.name || 'Imported Trello Board',
+          goal: boardName,
           type: goalType,
           tasks,
           details: {
             source: 'trello',
-            boardUrl: data.url || '',
+            boardUrl: boardUrl || '',
             listCount: openLists.length.toString(),
             boardType: detectedBoardType,
           },
@@ -3596,23 +3192,25 @@ export default function App() {
         setPendingImportGoal(newGoal);
 
         setTrelloImportResult({
-          boardName: data.name || 'Trello Board',
+          boardName: boardName,
           goalsCreated: 1,
           tasksCreated: tasks.length,
-          checklistsImported: totalChecklists,
-          attachmentsImported: totalAttachments,
-          commentsImported: totalComments,
+          checklistsImported: stats.totalChecklists,
+          attachmentsImported: stats.totalAttachments,
+          commentsImported: stats.totalComments,
           listsImported: openLists.length,
-          linksExtracted: totalLinks,
+          linksExtracted: stats.totalLinks,
         });
         setTrelloImportError(null);
         setIsImporting(false);
+        setImportMinimized(false);
         setShowTrelloImportModal(true);
 
       } catch (err) {
         setTrelloImportError('Failed to parse Trello export file. Please make sure it\'s a valid JSON file exported from Trello.');
         setTrelloImportResult(null);
         setIsImporting(false);
+        setImportMinimized(false);
         setShowTrelloImportModal(true);
       }
     };
@@ -3737,7 +3335,7 @@ export default function App() {
       setInputValue('');
       setError('');
     } else {
-      setError("I couldn't understand that. Try something like:\n• \"I want to learn Python\"\n• \"I want to travel to Japan\"\n• \"I want to make dinner\"");
+      setError("I couldn't understand that. Try something like:\nâ€¢ \"I want to learn Python\"\nâ€¢ \"I want to travel to Japan\"\nâ€¢ \"I want to make dinner\"");
     }
   };
 
@@ -3776,12 +3374,14 @@ export default function App() {
         createdAt: Date.now(),
         status: 'planning',
         backgroundImage: bgImage,
+        lastActivityAt: Date.now(),
       };
 
-      setGoals(prev => [...prev, newGoal]);
-      setActiveGoalId(newGoal.id);
-      setSelectedBackground(null);
-      setViewMode('tasks');
+      // Auto-detect suggested workspace for the new goal
+      const suggestedWs = autoDetectWorkspace(newGoal);
+      setSuggestedWorkspaceId(suggestedWs);
+      setPendingBoardForWorkspace(newGoal);
+      setShowWorkspaceSelectModal(true);
 
       // Reset form state
       setFormState({
@@ -3795,12 +3395,49 @@ export default function App() {
     }
   };
 
+  // Handle workspace selection for new board
+  const handleWorkspaceSelect = (workspaceId: string) => {
+    if (pendingBoardForWorkspace) {
+      const goalWithWorkspace: StoredGoal = {
+        ...pendingBoardForWorkspace,
+        workspaceId,
+        workspaceAutoDetected: workspaceId === suggestedWorkspaceId,
+      };
+      setGoals(prev => [...prev, goalWithWorkspace]);
+      setActiveGoalId(goalWithWorkspace.id);
+      setSelectedBackground(null);
+      setViewMode('tasks');
+      setShowWorkspaceSelectModal(false);
+      setPendingBoardForWorkspace(null);
+      setSuggestedWorkspaceId(null);
+    }
+  };
+
+  // Cancel workspace selection (skip and use suggested)
+  const handleWorkspaceSelectCancel = () => {
+    if (pendingBoardForWorkspace) {
+      const goalWithWorkspace: StoredGoal = {
+        ...pendingBoardForWorkspace,
+        workspaceId: suggestedWorkspaceId || 'personal',
+        workspaceAutoDetected: true,
+      };
+      setGoals(prev => [...prev, goalWithWorkspace]);
+      setActiveGoalId(goalWithWorkspace.id);
+      setSelectedBackground(null);
+      setViewMode('tasks');
+    }
+    setShowWorkspaceSelectModal(false);
+    setPendingBoardForWorkspace(null);
+    setSuggestedWorkspaceId(null);
+  };
+
   const handleToggleTask = (taskId: string) => {
     if (!activeGoalId) return;
     setGoals(prev => prev.map(goal => {
       if (goal.id === activeGoalId) {
         return {
           ...goal,
+          lastActivityAt: Date.now(),
           tasks: goal.tasks.map(task =>
             task.id === taskId ? { ...task, checked: !task.checked } : task
           ),
@@ -4000,7 +3637,7 @@ export default function App() {
     };
     setGoals(prev => prev.map(goal => {
       if (goal.id === activeGoalId) {
-        return { ...goal, tasks: [...goal.tasks, newTask] };
+        return { ...goal, lastActivityAt: Date.now(), tasks: [...goal.tasks, newTask] };
       }
       return goal;
     }));
@@ -4015,6 +3652,7 @@ export default function App() {
       if (goal.id === activeGoalId) {
         return {
           ...goal,
+          lastActivityAt: Date.now(),
           tasks: goal.tasks.map(task =>
             task.id === taskId ? { ...task, ...updates } : task
           ),
@@ -4022,6 +3660,30 @@ export default function App() {
       }
       return goal;
     }));
+  }, [activeGoalId]);
+
+  const handleSelectTask = useCallback((taskId: string) => {
+    if (!activeGoalId) {
+      setSelectedTaskId(taskId);
+      return;
+    }
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id !== activeGoalId) return goal;
+      const tasks = goal.tasks.map(task => {
+        if (task.id !== taskId) return task;
+        if (!task.coverImage && task.coverAttachmentId && task.attachments) {
+          const coverAtt = task.attachments.find(att => att.id === task.coverAttachmentId);
+          if (coverAtt?.url) {
+            return { ...task, coverImage: coverAtt.url };
+          }
+        }
+        return task;
+      });
+      return { ...goal, tasks };
+    }));
+
+    setSelectedTaskId(taskId);
   }, [activeGoalId]);
 
   // Background scanner for new content (seasons, etc.)
@@ -4191,15 +3853,15 @@ export default function App() {
 
   const getGoalEmoji = (type: string) => {
     switch (type) {
-      case 'learning': return '📚';
-      case 'travel': return '✈️';
-      case 'cooking': return '🍳';
-      case 'event': return '🎉';
-      case 'job': return '💼';
-      case 'fitness': return '💪';
-      case 'moving': return '📦';
-      case 'project': return '🚀';
-      default: return '🎯';
+      case 'learning': return 'ðŸ“š';
+      case 'travel': return 'âœˆï¸';
+      case 'cooking': return 'ðŸ³';
+      case 'event': return 'ðŸŽ‰';
+      case 'job': return 'ðŸ’¼';
+      case 'fitness': return 'ðŸ’ª';
+      case 'moving': return 'ðŸ“¦';
+      case 'project': return 'ðŸš€';
+      default: return 'ðŸŽ¯';
     }
   };
 
@@ -4209,54 +3871,49 @@ export default function App() {
   // Get selected task for modal
   const selectedTask = activeGoal?.tasks.find(t => t.id === selectedTaskId);
 
-  // Get boards grouped by workspace - each goal is its own board
-  const getBoardsByCategory = () => {
-    const boards: Record<string, { id: string; name: string; image?: string; taskCount: number; goalId: string }[]> = {};
+  // Auto-detect workspace based on content type or goal type
+  const autoDetectWorkspace = useCallback((goal: StoredGoal): string | null => {
+    // If no workspaces exist, return null
+    if (workspaces.length === 0) return null;
 
-    workspaces.forEach(ws => {
-      boards[ws.id] = [];
+    // First check content type from tasks
+    const contentType = goal.tasks.find(t => t.contentType)?.contentType;
+    if (contentType) {
+      const ws = workspaces.find(w => w.autoCategories?.includes(contentType));
+      if (ws) return ws.id;
+    }
+    // Then check goal type
+    const ws = workspaces.find(w => w.goalTypes?.includes(goal.type));
+    if (ws) return ws.id;
+    // Default to first workspace if available
+    return workspaces[0]?.id || null;
+  }, [workspaces]);
+
+  // Get boards for a specific workspace
+  const getBoardsForWorkspace = useCallback((workspaceId: string): StoredGoal[] => {
+    return goals.filter(g => {
+      // If goal has explicit workspace, use that
+      if (g.workspaceId) return g.workspaceId === workspaceId;
+      // Otherwise, auto-detect
+      return autoDetectWorkspace(g) === workspaceId;
+    }).sort((a, b) => (b.lastActivityAt || b.createdAt) - (a.lastActivityAt || a.createdAt));
+  }, [goals, autoDetectWorkspace]);
+
+  // Toggle workspace expansion
+  const toggleWorkspaceExpansion = useCallback((workspaceId: string) => {
+    setExpandedWorkspaces(prev => {
+      const next = new Set(prev);
+      if (next.has(workspaceId)) {
+        next.delete(workspaceId);
+      } else {
+        next.add(workspaceId);
+      }
+      return next;
     });
-
-    // Each goal is a separate board
-    goals.forEach(goal => {
-      // Determine which workspace this goal belongs to
-      const catId = goal.type === 'travel' ? 'travel' :
-                   goal.type === 'learning' ? 'learning' :
-                   ['project', 'job', 'media'].includes(goal.type) ? 'projects' : 'personal';
-
-      // Default images based on goal type or board type
-      const defaultImages: Record<string, string> = {
-        travel: boardBackgrounds[4],
-        learning: boardBackgrounds[5],
-        fitness: boardBackgrounds[7],
-        cooking: boardBackgrounds[8],
-        job: boardBackgrounds[9],
-        project: boardBackgrounds[6],
-        media: boardBackgrounds[6],
-        tvshows: boardBackgrounds[6],
-        movies: boardBackgrounds[6],
-        anime: boardBackgrounds[6],
-        books: boardBackgrounds[5],
-        games: boardBackgrounds[6],
-      };
-
-      const boardType = goal.details?.boardType || goal.type;
-
-      boards[catId].push({
-        id: goal.id,
-        goalId: goal.id,
-        name: goal.goal,
-        image: goal.backgroundImage || defaultImages[boardType] || boardBackgrounds[0],
-        taskCount: goal.tasks.length,
-      });
-    });
-
-    return boards;
-  };
+  }, []);
 
   // Home view - Workspaces and Boards
   if (viewMode === 'home') {
-    const boardsByCategory = getBoardsByCategory();
     const recentGoals = [...goals].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
 
     return (
@@ -4338,6 +3995,26 @@ export default function App() {
 
               <div className="w-px h-6 bg-[#3d444d]/50 mx-1" />
 
+              {/* Reset Data Button */}
+              <button
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all data? This will delete all workspaces, boards, and tasks.')) {
+                    localStorage.removeItem('smart_task_hub_v3');
+                    window.location.reload();
+                  }
+                }}
+                className="group px-3 py-2 rounded-lg text-[#9fadbc] hover:text-red-400 hover:bg-white/5
+                         transition-all duration-200 text-sm flex items-center gap-2"
+                title="Clear all data"
+              >
+                <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span className="hidden sm:inline">Reset</span>
+              </button>
+
+              <div className="w-px h-6 bg-[#3d444d]/50 mx-1" />
+
               {/* Create Button - Primary CTA */}
               <button
                 onClick={handleStartNewGoal}
@@ -4396,7 +4073,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Your Workspaces */}
+          {/* Your Workspaces - Dynamic Workspace Blocks */}
           <div>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-[#9fadbc] text-xs font-semibold uppercase tracking-wider">Your Workspaces</h2>
@@ -4417,183 +4094,103 @@ export default function App() {
               </button>
             </div>
 
-            {workspaces.map(workspace => {
-              const workspaceBoards = boardsByCategory[workspace.id] || [];
+            {/* Workspace Blocks Grid */}
+            {workspaces.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...workspaces].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(workspace => {
+                  const workspaceBoards = getBoardsForWorkspace(workspace.id);
 
-              return (
-                <div key={workspace.id} className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                  return (
+                    <WorkspaceBlock
+                      key={workspace.id}
+                      workspace={workspace}
+                      boards={workspaceBoards}
+                      isExpanded={expandedWorkspaces.has(workspace.id)}
+                      onToggleExpand={() => toggleWorkspaceExpansion(workspace.id)}
+                      onSelectBoard={(boardId) => {
+                        const goal = goals.find(g => g.id === boardId);
+                        if (goal) {
+                          setActiveGoalId(boardId);
+                          setViewMode('goal');
+                          if (goal.backgroundImage) {
+                            setSelectedBackground(goal.backgroundImage);
+                          }
+                        }
+                      }}
+                      onAddBoard={handleStartNewGoal}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              /* Empty state when no workspaces */
+              <div className="text-center py-12 bg-[#22272b] rounded-xl border border-[#3d444d]/50">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#3d444d]/50 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </div>
+                <h3 className="text-white font-semibold mb-2">No workspaces yet</h3>
+                <p className="text-[#9fadbc] text-sm mb-4">Create a workspace to organize your boards</p>
+                <button
+                  onClick={() => {
+                    setEditingWorkspace(null);
+                    setNewWorkspaceName('');
+                    setNewWorkspaceColor('#0079bf');
+                    setNewWorkspaceImage('');
+                    setShowWorkspaceModal(true);
+                  }}
+                  className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded-lg text-sm font-medium"
+                >
+                  Create Workspace
+                </button>
+              </div>
+            )}
+
+            {/* Unassigned Boards */}
+            {goals.filter(g => !g.workspaceId || !workspaces.find(w => w.id === g.workspaceId)).length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-[#9fadbc] text-xs font-semibold uppercase tracking-wider mb-4">Unassigned Boards</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {goals.filter(g => !g.workspaceId || !workspaces.find(w => w.id === g.workspaceId)).map(goal => {
+                    const tasks = goal.tasks || [];
+                    const completedTasks = tasks.filter(t => t.checked).length;
+                    const progress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
+                    return (
                       <div
-                        className="w-8 h-8 rounded flex items-center justify-center text-white font-bold text-sm bg-cover bg-center"
-                        style={{
-                          backgroundColor: workspace.backgroundImage ? 'transparent' : workspace.color,
-                          backgroundImage: workspace.backgroundImage ? `url('${workspace.backgroundImage}')` : 'none'
-                        }}
-                      >
-                        {!workspace.backgroundImage && workspace.name[0]}
-                      </div>
-                      <h3 className="text-white font-semibold">{workspace.name}</h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditWorkspace(workspace)}
-                        className="p-1.5 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                        title="Edit workspace"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                      <button
+                        key={goal.id}
                         onClick={() => {
-                          if (confirm(`Delete workspace "${workspace.name}"?`)) {
-                            handleDeleteWorkspace(workspace.id);
+                          setActiveGoalId(goal.id);
+                          setViewMode('goal');
+                          if (goal.backgroundImage) {
+                            setSelectedBackground(goal.backgroundImage);
                           }
                         }}
-                        className="p-1.5 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                        title="Delete workspace"
+                        className="bg-[#22272b] hover:bg-[#282e33] rounded-lg overflow-hidden cursor-pointer
+                                 transition-all border border-[#3d444d]/50 hover:border-[#3d444d]"
                       >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveBoardCategory(workspace.id);
-                          setViewMode('dashboard');
-                        }}
-                        className="px-3 py-1.5 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded text-sm flex items-center gap-1.5"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                        </svg>
-                        Boards
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {workspaceBoards.map(board => {
-                      const goal = goals.find(g => g.id === board.goalId);
-                      const tasks = goal?.tasks || [];
-                      const completedTasks = tasks.filter(t => t.checked).length;
-                      const progress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
-
-                      return (
-                        <div
-                          key={board.id}
-                          onClick={() => {
-                            setActiveGoalId(board.goalId);
-                            setViewMode('goal');
-                            if (goal?.backgroundImage) {
-                              setSelectedBackground(goal.backgroundImage);
-                            }
-                          }}
-                          className="bg-[#22272b] rounded-xl overflow-hidden cursor-pointer hover:bg-[#282e33]
-                                   transition-all group border border-[#3d444d]/50 hover:border-[#3d444d]"
-                        >
-                          {/* Board Header */}
-                          <div
-                            className="h-2 w-full"
-                            style={{
-                              background: board.image
-                                ? `linear-gradient(90deg, ${workspace.color}, ${workspace.color}aa)`
-                                : `linear-gradient(90deg, ${workspace.color}, ${workspace.color}aa)`
-                            }}
-                          />
-
-                          <div className="p-4">
-                            {/* Title and Progress */}
-                            <div className="flex items-start justify-between mb-3">
-                              <h4 className="text-white font-medium text-sm flex-1 pr-2">{board.name}</h4>
-                              {tasks.length > 0 && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-[#3d444d] text-[#9fadbc]">
-                                  {progress}%
-                                </span>
-                              )}
+                        <div className="h-1 w-full bg-[#3d444d]" />
+                        <div className="p-3">
+                          <h4 className="text-white text-sm font-medium truncate mb-2">{goal.goal}</h4>
+                          {tasks.length > 0 && (
+                            <div className="flex items-center justify-between text-xs text-[#9fadbc]">
+                              <span>{completedTasks}/{tasks.length}</span>
+                              <div className="w-12 h-1.5 bg-[#3d444d] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-[#579dff]"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
                             </div>
-
-                            {/* Task Preview */}
-                            {tasks.length > 0 ? (
-                              <div className="space-y-2">
-                                {tasks.slice(0, 3).map((task, idx) => (
-                                  <div key={idx} className="flex items-center gap-2 text-xs">
-                                    <div className={`w-3 h-3 rounded-sm border flex-shrink-0 flex items-center justify-center
-                                                  ${task.checked
-                                                    ? 'bg-green-500/20 border-green-500/50'
-                                                    : 'border-[#3d444d]'}`}
-                                    >
-                                      {task.checked && (
-                                        <svg className="w-2 h-2 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                      )}
-                                    </div>
-                                    <span className={`truncate ${task.checked ? 'text-[#9fadbc] line-through' : 'text-[#b6c2cf]'}`}>
-                                      {task.text}
-                                    </span>
-                                  </div>
-                                ))}
-                                {tasks.length > 3 && (
-                                  <p className="text-[#9fadbc] text-xs pl-5">+{tasks.length - 3} more</p>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="py-4 text-center">
-                                <p className="text-[#9fadbc] text-xs mb-2">No tasks yet</p>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveGoalId(board.goalId);
-                                    setViewMode('goal');
-                                  }}
-                                  className="text-[#579dff] text-xs hover:underline flex items-center gap-1 mx-auto"
-                                >
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                  </svg>
-                                  Add tasks
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Footer Stats */}
-                            {tasks.length > 0 && (
-                              <div className="mt-3 pt-3 border-t border-[#3d444d]/50 flex items-center justify-between">
-                                <span className="text-[#9fadbc] text-xs">{completedTasks}/{tasks.length} completed</span>
-                                <div className="w-16 h-1.5 bg-[#3d444d] rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-green-500 rounded-full transition-all"
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
-                      );
-                    })}
-
-                    {/* Create new board */}
-                    <div
-                      onClick={handleStartNewGoal}
-                      className="bg-[#282e33]/50 hover:bg-[#282e33] rounded-xl border-2 border-dashed border-[#3d444d]/50
-                               hover:border-[#3d444d] min-h-[160px] flex flex-col items-center justify-center gap-2
-                               cursor-pointer transition-all group"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-[#3d444d]/50 group-hover:bg-[#3d444d]
-                                    flex items-center justify-center transition-all">
-                        <svg className="w-5 h-5 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
                       </div>
-                      <span className="text-[#9fadbc] text-sm">Create new board</span>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
 
           {/* Workspace Add/Edit Modal */}
@@ -4662,7 +4259,7 @@ export default function App() {
                           key={idx}
                           onClick={() => setNewWorkspaceImage(bg)}
                           className={`h-12 rounded bg-cover bg-center ${newWorkspaceImage === bg ? 'ring-2 ring-[#579dff]' : ''}`}
-                          style={{ backgroundImage: `url('${bg}')` }}
+                          style={{ backgroundImage: `url('${getBackgroundThumbnail(bg)}')` }}
                         />
                       ))}
                     </div>
@@ -4689,10 +4286,36 @@ export default function App() {
             </div>
           )}
 
+          {/* Workspace Selection Modal for New Boards */}
+          {showWorkspaceSelectModal && pendingBoardForWorkspace && (
+            <WorkspaceSelectModal
+              workspaces={workspaces}
+              suggestedWorkspaceId={suggestedWorkspaceId}
+              boardName={pendingBoardForWorkspace.goal}
+              onSelect={handleWorkspaceSelect}
+              onCreateNew={() => {
+                // Close workspace select modal and open workspace create modal
+                setShowWorkspaceSelectModal(false);
+                setEditingWorkspace(null);
+                setNewWorkspaceName('');
+                setNewWorkspaceColor('#0079bf');
+                setNewWorkspaceImage('');
+                setShowWorkspaceModal(true);
+              }}
+              onCancel={handleWorkspaceSelectCancel}
+            />
+          )}
+
           {/* Importing Progress Modal */}
-          {isImporting && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-              <div className="bg-[#1a1f26] rounded-xl w-full max-w-sm shadow-2xl p-8 text-center">
+          {isImporting && !importMinimized && (
+            <div
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center cursor-pointer"
+              onClick={() => setImportMinimized(true)}
+            >
+              <div
+                className="bg-[#1a1f26] rounded-xl w-full max-w-sm shadow-2xl p-8 text-center cursor-default"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {/* Spinning loader */}
                 <div className="mb-6 flex justify-center">
                   <div className="w-16 h-16 border-4 border-[#3d444d] border-t-[#579dff] rounded-full animate-spin"></div>
@@ -4715,7 +4338,38 @@ export default function App() {
                     </p>
                   </div>
                 )}
+
+                {/* Minimize hint */}
+                <p className="text-[#6b7280] text-xs mt-6">Click outside to minimize</p>
               </div>
+            </div>
+          )}
+
+          {/* Import Progress Status Bar (minimized) */}
+          {isImporting && importMinimized && (
+            <div
+              onClick={() => setImportMinimized(false)}
+              className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50
+                         bg-[#282e33] rounded-lg shadow-xl border border-[#3d444d]
+                         px-4 py-3 flex items-center gap-4 cursor-pointer
+                         hover:bg-[#2d343a] transition-all"
+            >
+              <div className="animate-spin w-5 h-5 border-2 border-[#579dff] border-t-transparent rounded-full" />
+              <div>
+                <div className="text-white text-sm font-medium">
+                  Importing "{pendingImportGoal?.goal || 'Board'}"...
+                </div>
+                <div className="text-[#9fadbc] text-xs">
+                  {importProgress.current} / {importProgress.total} cards
+                </div>
+              </div>
+              <div className="w-24 h-2 bg-[#3d444d] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#579dff] transition-all"
+                  style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="text-[#9fadbc] text-xs">Click to expand</span>
             </div>
           )}
 
@@ -4830,9 +4484,17 @@ export default function App() {
                     {pendingImportGoal && (
                       <button
                         onClick={() => {
-                          setGoals(prev => [...prev, pendingImportGoal]);
-                          setPendingImportGoal(null);
+                          // Show workspace selection for imported board
+                          const importGoalWithActivity: StoredGoal = {
+                            ...pendingImportGoal,
+                            lastActivityAt: Date.now(),
+                          };
+                          const suggestedWs = autoDetectWorkspace(importGoalWithActivity);
+                          setSuggestedWorkspaceId(suggestedWs);
+                          setPendingBoardForWorkspace(importGoalWithActivity);
                           setShowTrelloImportModal(false);
+                          setShowWorkspaceSelectModal(true);
+                          setPendingImportGoal(null);
                         }}
                         className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded text-sm"
                       >
@@ -5356,263 +5018,40 @@ export default function App() {
 
   // Profile view - Personal information with templates
   if (viewMode === 'profile') {
-    const filteredTemplates = customProfileFields.filter(t => t.category === activeProfileCategory);
     const completion = getProfileCompletion();
-    const activeCategory = customProfileCategories.find(c => c.id === activeProfileCategory);
 
     return (
       <div className="min-h-screen bg-[#1d2125]">
-        {/* Header */}
-        <div className="bg-[#1d2125] border-b border-[#3d444d] px-4 py-3 sticky top-0 z-10">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => setViewMode('home')}
-              className="flex items-center gap-2 text-[#9fadbc] hover:text-white transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
-            <h1 className="text-xl font-bold text-white">My Profile</h1>
-            <div className="w-16" />
-          </div>
-        </div>
-
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          {/* Completion Card */}
-          <div className="bg-[#22272b] rounded-xl p-6 mb-6 border border-[#3d444d]">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-white font-semibold text-lg">Profile Completion</h2>
-                <p className="text-[#9fadbc] text-sm">Fill in your information to enable smart task detection</p>
-              </div>
-              <div className="text-3xl font-bold text-[#579dff]">{completion}%</div>
-            </div>
-            <div className="h-3 bg-[#1a1f26] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#579dff] transition-all duration-500"
-                style={{ width: `${completion}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Category Tabs */}
-          <div className="flex gap-2 mb-6 overflow-x-auto pb-2 items-center">
-            {customProfileCategories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveProfileCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2
-                          ${activeProfileCategory === cat.id
-                            ? 'bg-[#579dff] text-white'
-                            : 'bg-[#22272b] text-[#9fadbc] hover:bg-[#3d444d] hover:text-white'
-                          }`}
-              >
-                <span>{cat.icon}</span>
-                {cat.name}
-              </button>
-            ))}
-            <button
-              onClick={() => {
-                setNewCategoryName('');
-                setNewCategoryIcon('📁');
-                setShowAddCategoryModal(true);
-              }}
-              className="px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex items-center gap-1
-                        bg-[#22272b] text-[#9fadbc] hover:bg-[#3d444d] hover:text-white border border-dashed border-[#3d444d]"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add
-            </button>
-          </div>
-
-          {/* Category Header with Delete */}
-          {activeCategory && (
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold flex items-center gap-2">
-                <span>{activeCategory.icon}</span>
-                {activeCategory.name}
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setNewFieldLabel('');
-                    setNewFieldCategory(activeProfileCategory);
-                    setNewFieldHasExpiry(false);
-                    setNewFieldHasDocument(true);
-                    setNewFieldPlaceholder('');
-                    setNewFieldIcon('📝');
-                    setShowAddFieldModal(true);
-                  }}
-                  className="px-3 py-1.5 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded text-sm flex items-center gap-1.5"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add Field
-                </button>
-                {!['travel', 'identity', 'health', 'skills', 'education'].includes(activeCategory.id) && (
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete category "${activeCategory.name}" and all its fields?`)) {
-                        handleDeleteProfileCategory(activeCategory.id);
-                        setActiveProfileCategory(customProfileCategories[0]?.id || 'travel');
-                      }
-                    }}
-                    className="px-3 py-1.5 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded text-sm flex items-center gap-1.5"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete Category
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Profile Fields */}
-          <div className="space-y-4">
-            {filteredTemplates.map(template => {
-              const data = profileData[template.id] || {};
-              const isExpired = data.expiryDate && new Date(data.expiryDate) < new Date();
-              const isExpiringSoon = data.expiryDate && !isExpired &&
-                new Date(data.expiryDate) < new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000);
-
-              return (
-                <div
-                  key={template.id}
-                  className={`bg-[#22272b] rounded-xl p-4 border transition-all
-                            ${isExpired ? 'border-red-500/50' : isExpiringSoon ? 'border-yellow-500/50' : 'border-[#3d444d]'}`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="text-2xl">{template.icon}</div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-white font-medium">{template.label}</h3>
-                          {isExpired && (
-                            <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded">Expired</span>
-                          )}
-                          {isExpiringSoon && (
-                            <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded">Expiring Soon</span>
-                          )}
-                          {data.value && !isExpired && !isExpiringSoon && (
-                            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded">Complete</span>
-                          )}
-                        </div>
-                        {!profileTemplates.find(pt => pt.id === template.id) && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete field "${template.label}"?`)) {
-                                handleDeleteProfileField(template.id);
-                              }
-                            }}
-                            className="p-1.5 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                            title="Delete field"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Value Input */}
-                        <div>
-                          <label className="text-[#9fadbc] text-xs mb-1 block">Value</label>
-                          <input
-                            type="text"
-                            value={data.value || ''}
-                            onChange={(e) => handleUpdateProfileField(template.id, e.target.value, data.expiryDate)}
-                            placeholder={template.placeholder}
-                            className="w-full bg-[#1a1f26] border border-[#3d444d] rounded-lg px-3 py-2 text-white text-sm
-                                     placeholder-white/30 focus:outline-none focus:border-[#579dff]"
-                          />
-                        </div>
-
-                        {/* Expiry Date Input */}
-                        {template.hasExpiry && (
-                          <div>
-                            <label className="text-[#9fadbc] text-xs mb-1 block">Expiry Date</label>
-                            <input
-                              type="date"
-                              value={data.expiryDate || ''}
-                              onChange={(e) => handleUpdateProfileField(template.id, data.value || '', e.target.value)}
-                              className="w-full bg-[#1a1f26] border border-[#3d444d] rounded-lg px-3 py-2 text-white text-sm
-                                       focus:outline-none focus:border-[#579dff]"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Document Upload */}
-                      {template.hasDocument && (
-                        <div className="mt-3">
-                          <label className="text-[#9fadbc] text-xs mb-1 block">Supporting Document</label>
-                          {data.documentName ? (
-                            <div className="flex items-center gap-3 bg-[#1a1f26] rounded-lg p-3">
-                              <svg className="w-8 h-8 text-[#579dff]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-white text-sm truncate">{data.documentName}</p>
-                                <p className="text-[#9fadbc] text-xs">{data.documentType}</p>
-                              </div>
-                              <div className="flex gap-2">
-                                {data.documentData && (
-                                  <a
-                                    href={data.documentData}
-                                    download={data.documentName}
-                                    className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                                    title="Download"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
-                                  </a>
-                                )}
-                                <button
-                                  onClick={() => handleRemoveProfileDocument(template.id)}
-                                  className="p-2 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                                  title="Remove"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <label className="flex items-center gap-3 bg-[#1a1f26] hover:bg-[#282e33] rounded-lg p-3 cursor-pointer transition-all border border-dashed border-[#3d444d]">
-                              <svg className="w-6 h-6 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                              </svg>
-                              <span className="text-[#9fadbc] text-sm">Click to upload document (PDF, Image)</span>
-                              <input
-                                type="file"
-                                accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleProfileDocumentUpload(template.id, file);
-                                }}
-                              />
-                            </label>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <ProfileView
+          completion={completion}
+          customProfileCategories={customProfileCategories}
+          customProfileFields={customProfileFields}
+          activeProfileCategory={activeProfileCategory}
+          profileData={profileData}
+          profileDocumentErrors={profileDocumentErrors}
+          baseProfileTemplateIds={baseProfileTemplateIds}
+          onBack={() => setViewMode('home')}
+          onSelectCategory={setActiveProfileCategory}
+          onOpenAddCategory={() => {
+            setNewCategoryName('');
+            setNewCategoryIcon('ðŸ“');
+            setShowAddCategoryModal(true);
+          }}
+          onOpenAddField={(categoryId) => {
+            setNewFieldLabel('');
+            setNewFieldCategory(categoryId);
+            setNewFieldHasExpiry(false);
+            setNewFieldHasDocument(true);
+            setNewFieldPlaceholder('');
+            setNewFieldIcon('ðŸ“');
+            setShowAddFieldModal(true);
+          }}
+          onDeleteProfileCategory={handleDeleteProfileCategory}
+          onDeleteProfileField={handleDeleteProfileField}
+          onUpdateProfileField={handleUpdateProfileField}
+          onUploadProfileDocument={handleProfileDocumentUpload}
+          onRemoveProfileDocument={handleRemoveProfileDocument}
+        />
 
         {/* Add Category Modal */}
         {showAddCategoryModal && (
@@ -5652,7 +5091,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['📁', '💼', '🏠', '🎯', '📊', '🔧', '📱', '🎨', '🏃', '📚', '💰', '🌍'].map(icon => (
+                    {['ðŸ“', 'ðŸ’¼', 'ðŸ ', 'ðŸŽ¯', 'ðŸ“Š', 'ðŸ”§', 'ðŸ“±', 'ðŸŽ¨', 'ðŸƒ', 'ðŸ“š', 'ðŸ’°', 'ðŸŒ'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewCategoryIcon(icon)}
@@ -5736,7 +5175,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['📝', '📄', '🔑', '📧', '📞', '🏷️', '💳', '🎫', '📋', '🔗', '⚙️', '📌'].map(icon => (
+                    {['ðŸ“', 'ðŸ“„', 'ðŸ”‘', 'ðŸ“§', 'ðŸ“ž', 'ðŸ·ï¸', 'ðŸ’³', 'ðŸŽ«', 'ðŸ“‹', 'ðŸ”—', 'âš™ï¸', 'ðŸ“Œ'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewFieldIcon(icon)}
@@ -5824,7 +5263,7 @@ export default function App() {
       <div
         className="min-h-screen bg-cover bg-center bg-fixed"
         style={{
-          backgroundImage: `url('${boardBackground.replace('w=400', 'w=1920')}')`,
+          backgroundImage: `url('${scaleBackgroundUrl(boardBackground)}')`,
         }}
       >
         {/* Header - Trello style */}
@@ -5871,9 +5310,10 @@ export default function App() {
                                     ${boardBackground === bg ? 'ring-2 ring-[#579dff]' : ''}`}
                         >
                           <img
-                            src={bg}
+                            src={getBackgroundThumbnail(bg)}
                             alt={`Background ${index + 1}`}
                             className="w-full h-full object-cover"
+                            loading="lazy"
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
                           {boardBackground === bg && (
@@ -5901,14 +5341,30 @@ export default function App() {
         </div>
 
         {/* Trello-style Board with Drag and Drop */}
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
+        <div className="relative">
+          {/* Import in progress overlay */}
+          {isImporting && (
+            <div
+              className="absolute inset-0 bg-black/50 z-40 flex items-center justify-center cursor-pointer"
+              onClick={() => setImportMinimized(false)}
+            >
+              <div className="bg-[#1a1f26] rounded-lg px-6 py-4 shadow-xl border border-[#3d444d]">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin w-5 h-5 border-2 border-[#579dff] border-t-transparent rounded-full" />
+                  <span className="text-white/90">Import in progress...</span>
+                </div>
+                <p className="text-[#9fadbc] text-xs mt-2 text-center">Click to view details</p>
+              </div>
+            </div>
+          )}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="p-3 overflow-x-auto h-[calc(100vh-95px)]">
             <div className="flex gap-3 items-start h-full">
               <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                 {visibleColumns.map(column => {
@@ -5952,7 +5408,8 @@ export default function App() {
               </div>
             ) : null}
           </DragOverlay>
-        </DndContext>
+          </DndContext>
+        </div>
 
       </div>
     );
@@ -5980,7 +5437,7 @@ export default function App() {
               </svg>
               Back to Board
             </button>
-            <h1 className="text-lg font-bold text-white">🎯 Add New Goal</h1>
+            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Add New Goal</h1>
             <div className="w-24"></div>
           </div>
         </div>
@@ -6060,7 +5517,7 @@ export default function App() {
               </svg>
               Cancel
             </button>
-            <h1 className="text-lg font-bold text-white">🎯 Setting up your goal</h1>
+            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Setting up your goal</h1>
             <span className="text-white/50 text-sm">
               {formState.currentQuestionIndex + 1}/{formState.questions.length}
             </span>
@@ -6276,7 +5733,7 @@ export default function App() {
                         <SortableTaskCardWrapper
                           key={task.id}
                           task={task}
-                          onSelect={() => setSelectedTaskId(task.id)}
+                          onSelect={() => handleSelectTask(task.id)}
                           infoMatch={infoMatch}
                         />
                       );
@@ -6432,3 +5889,5 @@ export default function App() {
     </div>
   );
 }
+
+

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(ui\\): add collapsible and searchable checklists\n\n- Checklists now collapsible with expand/collapse toggle\n- Search input filters items across all checklists in real-time\n- Yellow highlight on matching text\n- \"Expand All\" / \"Collapse All\" button\n- Shows filtered count when searching\n\nAlso includes:\n- Worker infrastructure for background processing \\(TaskCoordinator, WorkerPool, TaskQueue, RateLimiter\\)\n- AgentOrchestrator background mode support\n- CLAUDE.md with post-implementation instructions\n- Updated TODO.md with optimization tasks\n- Version bump to 0.3.5\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(npm run dev:*)"
+    ]
+  }
+}

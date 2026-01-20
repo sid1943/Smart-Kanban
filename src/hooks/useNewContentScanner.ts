@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { ContentType, UpcomingContent, EnrichedData } from '../engine/types';
+import { Checklist, TaskItem } from '../types/tasks';
 
 // Cached enrichment structure
 interface CachedEnrichment {
@@ -15,27 +16,7 @@ import {
   ChecklistInfo,
 } from '../engine/detection';
 
-interface ChecklistItem {
-  id: string;
-  text: string;
-  checked: boolean;
-}
-
-interface Checklist {
-  id: string;
-  name: string;
-  items: ChecklistItem[];
-}
-
-interface TaskItem {
-  id: string;
-  text: string;
-  checked: boolean;
-  checklists?: Checklist[];
-  contentType?: ContentType;
-  hasNewContent?: boolean;
-  upcomingContent?: UpcomingContent;
-  showStatus?: 'ongoing' | 'ended' | 'upcoming';
+interface TaskItemWithCache extends TaskItem {
   cachedEnrichment?: CachedEnrichment;
 }
 
@@ -49,6 +30,8 @@ interface ScanResult {
     comparison?: string;
   };
 }
+
+const MAX_RESULTS = 200;
 
 // Cache duration: 24 hours in milliseconds
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -114,7 +97,7 @@ function yieldToUI(): Promise<void> {
 }
 
 export function useNewContentScanner(
-  tasks: TaskItem[],
+  tasks: TaskItemWithCache[],
   onUpdateTask: (taskId: string, updates: Partial<TaskItem>) => void,
   enabled: boolean = true
 ) {
@@ -250,7 +233,7 @@ export function useNewContentScanner(
       }
     }
 
-    setResults(newResults);
+    setResults(newResults.length > MAX_RESULTS ? newResults.slice(-MAX_RESULTS) : newResults);
     setScanning(false);
   }, [tasks, enabled, scanning, onUpdateTask]);
 

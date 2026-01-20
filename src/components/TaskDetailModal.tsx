@@ -3,58 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useContentEnrichment } from '../hooks/useContentEnrichment';
 import { getContentTypeIcon, getContentTypeName, EntertainmentData, BookData, GameData, ContentType, UpcomingContent, EnrichedData } from '../engine';
 import ContentTypePicker from './ContentTypePicker';
-
-interface TaskLabel {
-  name: string;
-  color: string;
-}
-
-interface ChecklistItem {
-  id: string;
-  text: string;
-  checked: boolean;
-}
-
-interface Checklist {
-  id: string;
-  name: string;
-  items: ChecklistItem[];
-}
-
-interface ExtractedLink {
-  url: string;
-  text?: string;
-  source: 'description' | 'attachment' | 'name' | 'comment' | 'checklist';
-  cardTitle?: string;
-  checklistName?: string;
-}
-
-interface TaskItem {
-  id: string;
-  text: string;
-  checked: boolean;
-  category?: string;
-  description?: string;
-  link?: string;
-  labels?: TaskLabel[];
-  dueDate?: string;
-  checklists?: Checklist[];
-  checklistTotal?: number;
-  checklistChecked?: number;
-  links?: ExtractedLink[];
-  // Smart Content Engine fields
-  contentType?: ContentType;
-  contentTypeConfidence?: number;
-  contentTypeManual?: boolean;
-  hasNewContent?: boolean;
-  upcomingContent?: UpcomingContent;
-  showStatus?: 'ongoing' | 'ended' | 'upcoming';
-  // Cached enrichment data (persisted to avoid re-fetching)
-  cachedEnrichment?: {
-    data: EnrichedData;
-    fetchedAt: string;
-  };
-}
+import { Checklist, TaskItem } from '../types/tasks';
 
 interface TaskDetailModalProps {
   task: TaskItem;

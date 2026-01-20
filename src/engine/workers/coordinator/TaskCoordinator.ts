@@ -60,6 +60,7 @@ export class TaskCoordinator {
   private rateLimiter: RateLimiter;
   private processing = false;
   private processInterval: ReturnType<typeof setInterval> | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
   private completionCallbacks: Map<string, TaskCompletionCallback[]> = new Map();
   private errorCallbacks: Map<string, TaskErrorCallback[]> = new Map();
@@ -93,6 +94,8 @@ export class TaskCoordinator {
     if (this.config.autoProcess) {
       this.startProcessing();
     }
+
+    this.startCleanup();
 
     this.initialized = true;
     console.log('[TaskCoordinator] Initialized');
@@ -358,6 +361,7 @@ export class TaskCoordinator {
     console.log('[TaskCoordinator] Shutting down...');
 
     this.stopProcessing();
+    this.stopCleanup();
 
     if (this.pool) {
       await this.pool.shutdown();
@@ -473,6 +477,7 @@ export class TaskCoordinator {
         }
       }
     }
+    this.clearCallbacks(cardId);
   }
 
   // Notify error callbacks
@@ -487,6 +492,7 @@ export class TaskCoordinator {
         }
       }
     }
+    this.clearCallbacks(cardId);
   }
 
   // Notify progress callbacks
@@ -500,6 +506,26 @@ export class TaskCoordinator {
           console.error('[TaskCoordinator] Progress callback error:', error);
         }
       }
+    }
+  }
+
+  private clearCallbacks(cardId: string): void {
+    this.completionCallbacks.delete(cardId);
+    this.errorCallbacks.delete(cardId);
+    this.progressCallbacks.delete(cardId);
+  }
+
+  private startCleanup(): void {
+    if (this.cleanupInterval) return;
+    this.cleanupInterval = setInterval(() => {
+      this.queue.cleanup();
+    }, 60000);
+  }
+
+  private stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 }

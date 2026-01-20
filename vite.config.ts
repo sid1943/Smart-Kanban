@@ -6,5 +6,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true
+  },
+  esbuild: {
+    sourcemap: false
+  },
+  build: {
+    sourcemap: false
+  },
+  css: {
+    devSourcemap: false
   }
 })

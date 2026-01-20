@@ -1,0 +1,14 @@
+Codex changes log
+
+- Initialized tracking file.
+- Added TaskCoordinator cleanup for callback maps and periodic task queue cleanup.
+- Capped background scan results in useNewContentScanner to limit memory growth.
+- Capped board background image sizing to reduce large image memory usage.
+- Added profile document size limit with per-field error messaging.
+- Lazy-load Trello cover images by deferring cover URL population until task open.
+- Disabled dev sourcemaps in Vite and lazy-loaded background thumbnails.
+- Use smaller thumbnails for workspace/background pickers to reduce image memory.
+- Moved task/profile/trello types into src/types and wired imports.
+- Extracted Profile view into src/components/ProfileView.tsx and wired App.tsx.
+- Extracted Trello parsing into src/features/trelloImport.ts and simplified App.tsx import flow.
+- Fixed build issues after refactor; npm run build now passes.
