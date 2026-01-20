@@ -2,6 +2,32 @@
 
 All notable changes to Smart Kanban will be documented in this file.
 
+## [0.3.8] - 2026-01-19
+
+### Added
+
+- **Live Tiles Workspace Dashboard**: Complete visual redesign of workspace dashboard
+  - Flat design aesthetic with bold typography
+  - Three tile sizes: Small (1x1), Medium (2x2), Wide (4x2)
+  - Right-click context menu to change tile size
+  - Tile sizes persist to localStorage
+
+- **Flip Animation System**: Dynamic tile content rotation
+  - Auto-flip every 7 seconds (staggered between tiles)
+  - Front face shows stats overview (boards, tasks, completion %)
+  - Back face shows board previews or completion percentage
+  - Flip pauses on hover
+
+- **New Components**:
+  - `WorkspaceTile.tsx` - Live tile with flip animation
+  - `TileGrid.tsx` - CSS Grid layout manager for tiles
+  - `src/styles/tiles.css` - Tile animations and responsive grid styles
+
+- **Responsive Grid Layout**: 4-column grid that adapts to screen size
+  - Wide tiles span full width, medium tiles span 2 columns
+  - Automatic reflow when tile sizes change
+  - Mobile-friendly layout adjustments
+
 ## [0.3.7] - 2026-01-19
 
 ### Added
