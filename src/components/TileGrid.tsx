@@ -55,15 +55,15 @@ export function TileGrid({
   // Sort workspaces by order
   const sortedWorkspaces = [...workspaces].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-  // Calculate stagger delay for flip animations
-  const getFlipDelay = (index: number) => index * 1500; // 1.5s stagger between tiles
+  // Calculate stagger delay for flip animations - faster stagger for more dynamic feel
+  const getFlipDelay = (index: number) => index * 800; // 0.8s stagger between tiles
 
   return (
     <div className="tile-grid">
       {sortedWorkspaces.map((workspace, index) => {
         const boards = getBoardsForWorkspace(workspace.id);
         const isExpanded = expandedWorkspaces.has(workspace.id);
-        const size = tileSizes.get(workspace.id) || workspace.tileSize || 'wide';
+        const size = tileSizes.get(workspace.id) || workspace.tileSize || 'medium';
 
         return (
           <WorkspaceTile
