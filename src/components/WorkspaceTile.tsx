@@ -7,6 +7,8 @@ interface TaskItem {
   text: string;
   checked: boolean;
   contentType?: 'tv_series' | 'movie' | 'anime' | 'book' | 'game' | 'music' | 'unknown';
+  completedAt?: number;
+  createdAt?: number;
 }
 
 interface StoredGoal {
@@ -61,15 +63,14 @@ export function WorkspaceTile({
   boards,
   size,
   isExpanded,
-  flipDelay = 0,
   onToggleExpand,
   onSelectBoard,
   onAddBoard,
   onSizeChange,
 }: WorkspaceTileProps) {
-  const [isFlipped, setIsFlipped] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
 
   // Calculate workspace summary
   const summary: WorkspaceSummary = useMemo(() => {
@@ -102,56 +103,52 @@ export function WorkspaceTile({
     };
   }, [boards]);
 
-  // Get latest unfinished task
-  const latestUnfinishedTask = useMemo(() => {
-    // Get all unchecked tasks from all boards with their board info
-    const unfinishedTasks: { task: TaskItem; boardName: string }[] = [];
+  // Get recently completed tasks (last 5)
+  const recentlyCompleted = useMemo(() => {
+    const completed: { task: TaskItem; boardName: string }[] = [];
 
     for (const board of boards) {
       for (const task of board.tasks) {
-        if (!task.checked) {
-          unfinishedTasks.push({ task, boardName: board.goal });
+        if (task.checked) {
+          completed.push({ task, boardName: board.goal });
         }
       }
     }
 
-    // Return the first unfinished task (most recently added based on array order)
-    return unfinishedTasks[0] || null;
+    // Sort by completion time if available, otherwise just take last ones
+    return completed.slice(-3).reverse();
+  }, [boards]);
+
+  // Get upcoming/unfinished tasks (next 3)
+  const upcomingTasks = useMemo(() => {
+    const upcoming: { task: TaskItem; boardName: string }[] = [];
+
+    for (const board of boards) {
+      for (const task of board.tasks) {
+        if (!task.checked && upcoming.length < 3) {
+          upcoming.push({ task, boardName: board.goal });
+        }
+      }
+      if (upcoming.length >= 3) break;
+    }
+
+    return upcoming;
   }, [boards]);
 
   const completionPercentage = summary.totalTasks > 0
     ? Math.round((summary.completedTasks / summary.totalTasks) * 100)
     : 0;
 
+  const remainingTasks = summary.totalTasks - summary.completedTasks;
   const hasRecentActivity = summary.recentActivity.length > 0;
 
-  // Auto-flip timer - faster timing
+  // Animate progress bar on mount
   useEffect(() => {
-    if (isHovered || isExpanded) return;
-
-    const flipInterval = 4000 + flipDelay; // 4 seconds + stagger
-    const timer = setInterval(() => {
-      setIsFlipped(prev => !prev);
-    }, flipInterval);
-
-    // Initial delayed flip
-    const initialTimer = setTimeout(() => {
-      setIsFlipped(true);
-      setTimeout(() => setIsFlipped(false), 2000);
-    }, 2000 + flipDelay);
-
-    return () => {
-      clearInterval(timer);
-      clearTimeout(initialTimer);
-    };
-  }, [flipDelay, isHovered, isExpanded]);
-
-  // Pause flip on hover
-  useEffect(() => {
-    if (isHovered) {
-      setIsFlipped(false);
-    }
-  }, [isHovered]);
+    const timer = setTimeout(() => {
+      setAnimatedProgress(completionPercentage);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [completionPercentage]);
 
   // Context menu handler
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -172,193 +169,49 @@ export function WorkspaceTile({
     setContextMenu(null);
   }, [onSizeChange]);
 
-  // Preview boards for back face
-  const previewBoards = boards.slice(0, 2);
+  // Format time ago
+  const formatTimeAgo = (timestamp: number) => {
+    const diff = Date.now() - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
 
-  const renderSmallTile = () => (
-    <>
-      {/* Front Face */}
-      <div className="tile-front" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content">
-          {hasRecentActivity && <div className="tile-active-dot" />}
-          <div className="tile-icon">{workspace.icon || workspace.name[0]}</div>
-          <div className="tile-number">{summary.totalTasks - summary.completedTasks}</div>
-          <div className="tile-label">remaining</div>
-          <div className="tile-progress" style={{ width: '100%' }}>
-            <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Back Face */}
-      <div className="tile-back" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content">
-          <div className="tile-completion">
-            <div className="tile-completion-number">{completionPercentage}%</div>
-            <div className="tile-completion-label">complete</div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-
-  const renderMediumTile = () => (
-    <>
-      {/* Front Face - Horizontal layout */}
-      <div className="tile-front" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content">
-          {hasRecentActivity && <div className="tile-active-dot" />}
-          <div className="tile-header">
-            <span className="tile-title">{workspace.name}</span>
-            <span className="tile-stats">
-              {summary.boardCount} boards • {summary.completedTasks}/{summary.totalTasks} done • {completionPercentage}%
-            </span>
-            {latestUnfinishedTask && (
-              <span className="tile-task-preview">
-                <span className="tile-task-checkbox">○</span>
-                {latestUnfinishedTask.task.text}
-              </span>
-            )}
-          </div>
-          <div className="tile-right">
-            <div className="tile-number">{summary.totalTasks - summary.completedTasks}</div>
-            <div className="tile-number-label">left</div>
-          </div>
-          <div className="tile-progress" style={{ width: '100%' }}>
-            <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Back Face - Stats */}
-      <div className="tile-back" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content" style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: '24px' }}>
-          <div className="tile-stat-item">
-            <div className="tile-stat-value">{summary.boardCount}</div>
-            <div className="tile-stat-label">boards</div>
-          </div>
-          <div className="tile-stat-item">
-            <div className="tile-stat-value">{summary.completedTasks}</div>
-            <div className="tile-stat-label">done</div>
-          </div>
-          <div className="tile-stat-item">
-            <div className="tile-stat-value">{summary.totalTasks - summary.completedTasks}</div>
-            <div className="tile-stat-label">left</div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-
-  const renderWideTile = () => (
-    <>
-      {/* Front Face - Full horizontal layout */}
-      <div className="tile-front" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content">
-          {hasRecentActivity && <div className="tile-active-dot" />}
-          <div className="tile-left">
-            <span className="tile-icon">{workspace.icon || workspace.name[0]}</span>
-            <div className="tile-info">
-              <span className="tile-title">{workspace.name}</span>
-              <span className="tile-stats">
-                {summary.boardCount} boards • {summary.completedTasks}/{summary.totalTasks} tasks • {completionPercentage}% complete
-              </span>
-              {latestUnfinishedTask && (
-                <span className="tile-task-preview">
-                  <span className="tile-task-checkbox">○</span>
-                  {latestUnfinishedTask.task.text}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="tile-right">
-            <div className="tile-stat-item">
-              <div className="tile-stat-value" style={{ fontSize: '24px' }}>{summary.totalTasks - summary.completedTasks}</div>
-              <div className="tile-stat-label">remaining</div>
-            </div>
-          </div>
-          <div className="tile-progress" style={{ width: '100%' }}>
-            <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Back Face - Stats + boards */}
-      <div className="tile-back" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content" style={{ flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <div className="tile-stat-item">
-              <div className="tile-stat-value">{summary.boardCount}</div>
-              <div className="tile-stat-label">boards</div>
-            </div>
-            <div className="tile-stat-item">
-              <div className="tile-stat-value">{summary.completedTasks}</div>
-              <div className="tile-stat-label">done</div>
-            </div>
-            <div className="tile-stat-item">
-              <div className="tile-stat-value">{completionPercentage}%</div>
-              <div className="tile-stat-label">progress</div>
-            </div>
-          </div>
-          <div className="tile-boards-preview" style={{ flex: 1 }}>
-            {previewBoards.length > 0 ? (
-              previewBoards.map(board => (
-                <div key={board.id} className="tile-board-item">
-                  {board.goal}
-                </div>
-              ))
-            ) : (
-              <div className="tile-board-item" style={{ opacity: 0.7 }}>No boards yet</div>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
-  );
-
-  const renderTileContent = () => {
-    switch (size) {
-      case 'small':
-        return renderSmallTile();
-      case 'medium':
-        return renderMediumTile();
-      case 'wide':
-      default:
-        return renderWideTile();
-    }
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
   };
 
   // If expanded, show the full content with board grid
   if (isExpanded) {
     return (
       <div
-        className="tile"
-        style={{ gridColumn: 'span 6' }}
+        className="live-tile live-tile-expanded"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onContextMenu={handleContextMenu}
       >
         <div
-          className="bg-[#22272b] rounded border border-[#3d444d]/50 overflow-hidden"
-          style={{ borderLeft: `3px solid ${workspace.color}` }}
+          className="bg-[#22272b] rounded-lg border border-[#3d444d]/50 overflow-hidden"
+          style={{ borderLeft: `4px solid ${workspace.color}` }}
         >
           {/* Header */}
           <div
             onClick={onToggleExpand}
-            className="px-3 py-2 cursor-pointer hover:bg-[#282e33] transition-colors flex items-center justify-between"
+            className="px-4 py-3 cursor-pointer hover:bg-[#282e33] transition-colors flex items-center justify-between"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div
-                className="w-7 h-7 rounded flex items-center justify-center text-sm"
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
                 style={{ backgroundColor: workspace.color }}
               >
                 {workspace.icon || workspace.name[0]}
               </div>
               <div>
-                <h3 className="text-white font-medium text-sm flex items-center gap-1.5">
+                <h3 className="text-white font-semibold text-base flex items-center gap-2">
                   {workspace.name}
                   <svg
-                    className="w-3 h-3 text-[#9fadbc] rotate-180"
+                    className="w-4 h-4 text-[#9fadbc] rotate-180"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -366,16 +219,16 @@ export function WorkspaceTile({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </h3>
-                <p className="text-[#9fadbc] text-xs">
-                  {summary.boardCount} boards • {summary.totalTasks} tasks • {completionPercentage}%
+                <p className="text-[#9fadbc] text-sm">
+                  {summary.boardCount} boards • {summary.totalTasks} tasks • {completionPercentage}% complete
                 </p>
               </div>
             </div>
           </div>
 
           {/* Board Grid */}
-          <div className="px-3 pb-3 border-t border-[#3d444d]/50">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 mt-2">
+          <div className="px-4 pb-4 border-t border-[#3d444d]/50">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mt-3">
               {boards.map(board => (
                 <BoardMiniCard
                   key={board.id}
@@ -391,19 +244,19 @@ export function WorkspaceTile({
                   e.stopPropagation();
                   onAddBoard();
                 }}
-                className="bg-[#282e33]/50 hover:bg-[#282e33] rounded border border-dashed border-[#3d444d]/50
-                         hover:border-[#3d444d] min-h-[80px] flex flex-col items-center justify-center gap-1
-                         cursor-pointer transition-all"
+                className="bg-[#282e33]/50 hover:bg-[#282e33] rounded-lg border border-dashed border-[#3d444d]/50
+                         hover:border-[#579dff] min-h-[100px] flex flex-col items-center justify-center gap-2
+                         cursor-pointer transition-all group"
               >
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center"
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
                   style={{ backgroundColor: workspace.color + '30' }}
                 >
-                  <svg className="w-3 h-3 text-[#9fadbc]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 text-[#9fadbc] group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                 </div>
-                <span className="text-[#9fadbc] text-[10px]">Add board</span>
+                <span className="text-[#9fadbc] text-xs group-hover:text-white transition-colors">Add board</span>
               </div>
             </div>
           </div>
@@ -421,17 +274,109 @@ export function WorkspaceTile({
     );
   }
 
+  // Main tile view - single large square with all info
   return (
     <>
       <div
-        className={`tile tile-${size} ${isFlipped ? 'flipped' : ''}`}
+        className={`live-tile live-tile-${size}`}
         onClick={onToggleExpand}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onContextMenu={handleContextMenu}
+        style={{
+          backgroundColor: workspace.color,
+          '--tile-color': workspace.color,
+        } as React.CSSProperties}
       >
-        <div className="tile-inner">
-          {renderTileContent()}
+        {/* Activity indicator */}
+        {hasRecentActivity && (
+          <div className="live-tile-pulse" />
+        )}
+
+        {/* Header */}
+        <div className="live-tile-header">
+          <div className="live-tile-icon">{workspace.icon || workspace.name[0]}</div>
+          <div className="live-tile-title-section">
+            <h3 className="live-tile-title">{workspace.name}</h3>
+            {workspace.description && (
+              <p className="live-tile-subtitle">{workspace.description}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="live-tile-stats-grid">
+          <div className="live-tile-stat">
+            <span className="live-tile-stat-value">{summary.boardCount}</span>
+            <span className="live-tile-stat-label">Boards</span>
+          </div>
+          <div className="live-tile-stat">
+            <span className="live-tile-stat-value">{summary.totalTasks}</span>
+            <span className="live-tile-stat-label">Tasks</span>
+          </div>
+          <div className="live-tile-stat">
+            <span className="live-tile-stat-value">{summary.completedTasks}</span>
+            <span className="live-tile-stat-label">Done</span>
+          </div>
+          <div className="live-tile-stat">
+            <span className="live-tile-stat-value live-tile-stat-remaining">{remainingTasks}</span>
+            <span className="live-tile-stat-label">Left</span>
+          </div>
+        </div>
+
+        {/* Recent Activity Section */}
+        {recentlyCompleted.length > 0 && (
+          <div className="live-tile-section">
+            <div className="live-tile-section-header">
+              <span className="live-tile-section-icon">&#10003;</span>
+              Recently Done
+            </div>
+            <div className="live-tile-task-list">
+              {recentlyCompleted.map((item, idx) => (
+                <div key={idx} className="live-tile-task live-tile-task-done">
+                  <span className="live-tile-task-check">&#10003;</span>
+                  <span className="live-tile-task-text">{item.task.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Upcoming Tasks Section */}
+        {upcomingTasks.length > 0 && (
+          <div className="live-tile-section">
+            <div className="live-tile-section-header">
+              <span className="live-tile-section-icon">&#9675;</span>
+              Next Up
+            </div>
+            <div className="live-tile-task-list">
+              {upcomingTasks.map((item, idx) => (
+                <div key={idx} className="live-tile-task">
+                  <span className="live-tile-task-circle">&#9675;</span>
+                  <span className="live-tile-task-text">{item.task.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {summary.totalTasks === 0 && (
+          <div className="live-tile-empty">
+            <span>No tasks yet</span>
+            <span className="live-tile-empty-sub">Click to add boards</span>
+          </div>
+        )}
+
+        {/* Progress Bar */}
+        <div className="live-tile-progress-container">
+          <div className="live-tile-progress-bar">
+            <div
+              className="live-tile-progress-fill"
+              style={{ width: `${animatedProgress}%` }}
+            />
+          </div>
+          <span className="live-tile-progress-text">{completionPercentage}%</span>
         </div>
       </div>
 
@@ -465,33 +410,33 @@ function TileContextMenu({ x, y, currentSize, onSizeChange }: TileContextMenuPro
       style={{ left: adjustedX, top: adjustedY }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="tile-context-menu-header">Size</div>
+      <div className="tile-context-menu-header">Tile Size</div>
       <div
         className={`tile-context-menu-item ${currentSize === 'small' ? 'active' : ''}`}
         onClick={() => onSizeChange('small')}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <rect x="3" y="3" width="4" height="4" rx="1" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <rect x="4" y="4" width="8" height="8" rx="1" />
         </svg>
-        Small
+        Compact
       </div>
       <div
         className={`tile-context-menu-item ${currentSize === 'medium' ? 'active' : ''}`}
         onClick={() => onSizeChange('medium')}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <rect x="2" y="4" width="8" height="4" rx="1" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <rect x="2" y="3" width="12" height="10" rx="1" />
         </svg>
-        Medium
+        Standard
       </div>
       <div
         className={`tile-context-menu-item ${currentSize === 'wide' ? 'active' : ''}`}
         onClick={() => onSizeChange('wide')}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <rect x="1" y="4" width="12" height="4" rx="1" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <rect x="1" y="2" width="14" height="12" rx="1" />
         </svg>
-        Wide
+        Large
       </div>
     </div>
   );
