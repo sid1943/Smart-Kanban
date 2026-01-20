@@ -102,6 +102,23 @@ export function WorkspaceTile({
     };
   }, [boards]);
 
+  // Get latest unfinished task
+  const latestUnfinishedTask = useMemo(() => {
+    // Get all unchecked tasks from all boards with their board info
+    const unfinishedTasks: { task: TaskItem; boardName: string }[] = [];
+
+    for (const board of boards) {
+      for (const task of board.tasks) {
+        if (!task.checked) {
+          unfinishedTasks.push({ task, boardName: board.goal });
+        }
+      }
+    }
+
+    // Return the first unfinished task (most recently added based on array order)
+    return unfinishedTasks[0] || null;
+  }, [boards]);
+
   const completionPercentage = summary.totalTasks > 0
     ? Math.round((summary.completedTasks / summary.totalTasks) * 100)
     : 0;
@@ -196,6 +213,12 @@ export function WorkspaceTile({
             <span className="tile-stats">
               {summary.boardCount} boards • {completionPercentage}%
             </span>
+            {latestUnfinishedTask && (
+              <span className="tile-task-preview">
+                <span className="tile-task-checkbox">○</span>
+                {latestUnfinishedTask.task.text}
+              </span>
+            )}
           </div>
           <div className="tile-right">
             <div className="tile-number">{summary.totalTasks}</div>
@@ -239,14 +262,17 @@ export function WorkspaceTile({
               <span className="tile-stats">
                 {summary.boardCount} boards • {summary.totalTasks} tasks • {completionPercentage}%
               </span>
+              {latestUnfinishedTask && (
+                <span className="tile-task-preview">
+                  <span className="tile-task-checkbox">○</span>
+                  {latestUnfinishedTask.task.text}
+                </span>
+              )}
             </div>
           </div>
           <div className="tile-right">
-            <div className="tile-activity">
-              <span className="tile-activity-icon">↻</span>
-              <span>{summary.recentActivity[0]?.text || 'No activity'}</span>
-            </div>
             <div className="tile-number">{summary.totalTasks}</div>
+            <div className="tile-number-label">left</div>
           </div>
           <div className="tile-progress" style={{ width: '100%' }}>
             <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />

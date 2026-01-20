@@ -60,24 +60,24 @@
   grid-column: span 1;
   grid-row: span 1;
   aspect-ratio: 1 / 1;
-  min-height: 72px;
-  max-height: 90px;
+  min-height: 88px;
+  max-height: 100px;
 }
 
 /* Medium Tile: 2x1 */
 .tile-medium {
   grid-column: span 2;
   grid-row: span 1;
-  min-height: 72px;
-  max-height: 90px;
+  min-height: 88px;
+  max-height: 100px;
 }
 
 /* Wide Tile: 3x1 */
 .tile-wide {
   grid-column: span 3;
   grid-row: span 1;
-  min-height: 72px;
-  max-height: 90px;
+  min-height: 88px;
+  max-height: 100px;
 }
 
 /* Responsive tile sizing */
@@ -237,6 +237,27 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Task preview */
+.tile-task-preview {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.9;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.tile-task-checkbox {
+  font-size: 10px;
+  opacity: 0.8;
+  flex-shrink: 0;
 }
 
 /* Icon positioning */
