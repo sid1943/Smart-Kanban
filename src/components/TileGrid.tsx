@@ -34,22 +34,16 @@ interface Workspace {
 interface TileGridProps {
   workspaces: Workspace[];
   getBoardsForWorkspace: (workspaceId: string) => StoredGoal[];
-  expandedWorkspaces: Set<string>;
   tileSizes: Map<string, TileSize>;
-  onToggleExpand: (workspaceId: string) => void;
-  onSelectBoard: (boardId: string) => void;
-  onAddBoard: () => void;
+  onSelectWorkspace: (workspaceId: string) => void;
   onTileSizeChange: (workspaceId: string, size: TileSize) => void;
 }
 
 export function TileGrid({
   workspaces,
   getBoardsForWorkspace,
-  expandedWorkspaces,
   tileSizes,
-  onToggleExpand,
-  onSelectBoard,
-  onAddBoard,
+  onSelectWorkspace,
   onTileSizeChange,
 }: TileGridProps) {
   // Sort workspaces by order
@@ -59,7 +53,6 @@ export function TileGrid({
     <div className="tile-grid">
       {sortedWorkspaces.map((workspace) => {
         const boards = getBoardsForWorkspace(workspace.id);
-        const isExpanded = expandedWorkspaces.has(workspace.id);
         // Default to 'medium' for standard tile size
         const size = tileSizes.get(workspace.id) || workspace.tileSize || 'medium';
 
@@ -69,10 +62,7 @@ export function TileGrid({
             workspace={workspace}
             boards={boards}
             size={size}
-            isExpanded={isExpanded}
-            onToggleExpand={() => onToggleExpand(workspace.id)}
-            onSelectBoard={onSelectBoard}
-            onAddBoard={onAddBoard}
+            onSelect={() => onSelectWorkspace(workspace.id)}
             onSizeChange={(newSize) => onTileSizeChange(workspace.id, newSize)}
           />
         );

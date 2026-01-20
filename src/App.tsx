@@ -1494,7 +1494,7 @@ function getBackgroundThumbnail(url: string): string {
   return scaleBackgroundUrl(url, 200);
 }
 
-type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal';
+type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal' | 'workspace';
 
 // Board/Workspace types
 interface _Board {
@@ -1771,6 +1771,7 @@ export default function App() {
   const [newWorkspaceImage, setNewWorkspaceImage] = useState('');
 
   // Dynamic Workspace Blocks state
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
   const [tileSizes, setTileSizes] = useState<Map<string, TileSize>>(() => {
     const saved = localStorage.getItem('workspace-tile-sizes');
@@ -3539,17 +3540,10 @@ export default function App() {
     }).sort((a, b) => (b.lastActivityAt || b.createdAt) - (a.lastActivityAt || a.createdAt));
   }, [goals, autoDetectWorkspace]);
 
-  // Toggle workspace expansion
-  const toggleWorkspaceExpansion = useCallback((workspaceId: string) => {
-    setExpandedWorkspaces(prev => {
-      const next = new Set(prev);
-      if (next.has(workspaceId)) {
-        next.delete(workspaceId);
-      } else {
-        next.add(workspaceId);
-      }
-      return next;
-    });
+  // Navigate to workspace view
+  const navigateToWorkspace = useCallback((workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId);
+    setViewMode('workspace');
   }, []);
 
   // Handle tile size change with persistence
@@ -3749,20 +3743,8 @@ export default function App() {
               <TileGrid
                 workspaces={workspaces}
                 getBoardsForWorkspace={getBoardsForWorkspace}
-                expandedWorkspaces={expandedWorkspaces}
                 tileSizes={tileSizes}
-                onToggleExpand={toggleWorkspaceExpansion}
-                onSelectBoard={(boardId) => {
-                  const goal = goals.find(g => g.id === boardId);
-                  if (goal) {
-                    setActiveGoalId(boardId);
-                    setViewMode('goal');
-                    if (goal.backgroundImage) {
-                      setSelectedBackground(goal.backgroundImage);
-                    }
-                  }
-                }}
-                onAddBoard={handleStartNewGoal}
+                onSelectWorkspace={navigateToWorkspace}
                 onTileSizeChange={handleTileSizeChange}
               />
             ) : (
@@ -4315,6 +4297,164 @@ export default function App() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // Workspace view - shows all boards in a workspace
+  if (viewMode === 'workspace' && selectedWorkspaceId) {
+    const selectedWorkspace = workspaces.find(w => w.id === selectedWorkspaceId);
+    const workspaceBoards = getBoardsForWorkspace(selectedWorkspaceId);
+
+    if (!selectedWorkspace) {
+      setViewMode('home');
+      return null;
+    }
+
+    return (
+      <div className="min-h-screen bg-[#1d2125]">
+        {/* Header */}
+        <div
+          className="border-b border-[#3d444d]/50 px-6 py-4 sticky top-0 z-10"
+          style={{ backgroundColor: selectedWorkspace.color }}
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  setSelectedWorkspaceId(null);
+                  setViewMode('home');
+                }}
+                className="p-2 text-white/70 hover:text-white hover:bg-white/20 rounded transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-3">
+                {selectedWorkspace.icon && (
+                  <span className="text-3xl">{selectedWorkspace.icon}</span>
+                )}
+                <div>
+                  <h1 className="text-xl font-bold text-white">{selectedWorkspace.name}</h1>
+                  <p className="text-white/70 text-sm">
+                    {workspaceBoards.length} board{workspaceBoards.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleStartNewGoal}
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Board
+            </button>
+          </div>
+        </div>
+
+        {/* Boards Grid */}
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          {workspaceBoards.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {workspaceBoards.map(board => {
+                const completedTasks = board.tasks.filter(t => t.checked).length;
+                const totalTasks = board.tasks.length;
+                const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+                return (
+                  <div
+                    key={board.id}
+                    onClick={() => {
+                      setActiveGoalId(board.id);
+                      setViewMode('tasks');
+                      if (board.backgroundImage) {
+                        setSelectedBackground(board.backgroundImage);
+                      }
+                    }}
+                    className="bg-[#22272b] hover:bg-[#282e33] rounded-lg overflow-hidden cursor-pointer transition-all group border border-[#3d444d]/50 hover:border-[#579dff]/50"
+                  >
+                    {/* Board thumbnail/header */}
+                    <div
+                      className="h-24 relative"
+                      style={{
+                        backgroundColor: selectedWorkspace.color,
+                        backgroundImage: board.backgroundImage ? `url(${board.backgroundImage})` : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all" />
+                    </div>
+
+                    {/* Board info */}
+                    <div className="p-4">
+                      <h3 className="text-white font-semibold mb-2 line-clamp-2">{board.goal}</h3>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-[#9fadbc]">
+                          {completedTasks}/{totalTasks} tasks
+                        </span>
+                        <span className="text-[#9fadbc]">{progress}%</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="mt-2 h-1.5 bg-[#3d444d] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${progress}%`,
+                            backgroundColor: selectedWorkspace.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Add board card */}
+              <div
+                onClick={handleStartNewGoal}
+                className="bg-[#22272b]/50 hover:bg-[#22272b] rounded-lg border-2 border-dashed border-[#3d444d]/50 hover:border-[#579dff] min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group"
+              >
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition-colors"
+                  style={{ backgroundColor: selectedWorkspace.color + '30' }}
+                >
+                  <svg className="w-6 h-6 text-[#9fadbc] group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <span className="text-[#9fadbc] group-hover:text-white transition-colors">Create new board</span>
+              </div>
+            </div>
+          ) : (
+            /* Empty state */
+            <div className="text-center py-16">
+              <div
+                className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: selectedWorkspace.color + '20' }}
+              >
+                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke={selectedWorkspace.color}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <h3 className="text-white text-xl font-semibold mb-2">No boards yet</h3>
+              <p className="text-[#9fadbc] mb-6">Create your first board in this workspace</p>
+              <button
+                onClick={handleStartNewGoal}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-medium transition-all"
+                style={{ backgroundColor: selectedWorkspace.color }}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Board
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { BoardMiniCard } from './BoardMiniCard';
 
 // Types matching App.tsx definitions
 interface TaskItem {
@@ -50,11 +49,7 @@ interface WorkspaceTileProps {
   workspace: Workspace;
   boards: StoredGoal[];
   size: TileSize;
-  isExpanded: boolean;
-  flipDelay?: number;
-  onToggleExpand: () => void;
-  onSelectBoard: (boardId: string) => void;
-  onAddBoard: () => void;
+  onSelect: () => void;
   onSizeChange?: (size: TileSize) => void;
 }
 
@@ -62,13 +57,9 @@ export function WorkspaceTile({
   workspace,
   boards,
   size,
-  isExpanded,
-  onToggleExpand,
-  onSelectBoard,
-  onAddBoard,
+  onSelect,
   onSizeChange,
 }: WorkspaceTileProps) {
-  const [isHovered, setIsHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [animatedProgress, setAnimatedProgress] = useState(0);
 
@@ -103,7 +94,7 @@ export function WorkspaceTile({
     };
   }, [boards]);
 
-  // Get recently completed tasks (last 5)
+  // Get recently completed tasks (last 3)
   const recentlyCompleted = useMemo(() => {
     const completed: { task: TaskItem; boardName: string }[] = [];
 
@@ -115,7 +106,6 @@ export function WorkspaceTile({
       }
     }
 
-    // Sort by completion time if available, otherwise just take last ones
     return completed.slice(-3).reverse();
   }, [boards]);
 
@@ -169,119 +159,12 @@ export function WorkspaceTile({
     setContextMenu(null);
   }, [onSizeChange]);
 
-  // Format time ago
-  const formatTimeAgo = (timestamp: number) => {
-    const diff = Date.now() - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
-  };
-
-  // If expanded, show the full content with board grid
-  if (isExpanded) {
-    return (
-      <div
-        className="live-tile live-tile-expanded"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onContextMenu={handleContextMenu}
-      >
-        <div
-          className="bg-[#22272b] rounded-lg border border-[#3d444d]/50 overflow-hidden"
-          style={{ borderLeft: `4px solid ${workspace.color}` }}
-        >
-          {/* Header */}
-          <div
-            onClick={onToggleExpand}
-            className="px-4 py-3 cursor-pointer hover:bg-[#282e33] transition-colors flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
-                style={{ backgroundColor: workspace.color }}
-              >
-                {workspace.icon || workspace.name[0]}
-              </div>
-              <div>
-                <h3 className="text-white font-semibold text-base flex items-center gap-2">
-                  {workspace.name}
-                  <svg
-                    className="w-4 h-4 text-[#9fadbc] rotate-180"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </h3>
-                <p className="text-[#9fadbc] text-sm">
-                  {summary.boardCount} boards • {summary.totalTasks} tasks • {completionPercentage}% complete
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Board Grid */}
-          <div className="px-4 pb-4 border-t border-[#3d444d]/50">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mt-3">
-              {boards.map(board => (
-                <BoardMiniCard
-                  key={board.id}
-                  board={board}
-                  workspaceColor={workspace.color}
-                  onClick={() => onSelectBoard(board.id)}
-                />
-              ))}
-
-              {/* Add board */}
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddBoard();
-                }}
-                className="bg-[#282e33]/50 hover:bg-[#282e33] rounded-lg border border-dashed border-[#3d444d]/50
-                         hover:border-[#579dff] min-h-[100px] flex flex-col items-center justify-center gap-2
-                         cursor-pointer transition-all group"
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-                  style={{ backgroundColor: workspace.color + '30' }}
-                >
-                  <svg className="w-4 h-4 text-[#9fadbc] group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                </div>
-                <span className="text-[#9fadbc] text-xs group-hover:text-white transition-colors">Add board</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {contextMenu && (
-          <TileContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            currentSize={size}
-            onSizeChange={handleSizeChange}
-          />
-        )}
-      </div>
-    );
-  }
-
   // Main tile view - single large square with all info
   return (
     <>
       <div
         className={`live-tile live-tile-${size}`}
-        onClick={onToggleExpand}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onClick={onSelect}
         onContextMenu={handleContextMenu}
         style={{
           backgroundColor: workspace.color,
@@ -361,7 +244,7 @@ export function WorkspaceTile({
         {summary.totalTasks === 0 && (
           <div className="live-tile-empty">
             <span>No tasks yet</span>
-            <span className="live-tile-empty-sub">Click to add boards</span>
+            <span className="live-tile-empty-sub">Click to view boards</span>
           </div>
         )}
 
