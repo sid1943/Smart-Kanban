@@ -56,6 +56,9 @@ interface TaskBoardViewProps {
   onAddChecklistItem: (taskId: string, checklistId: string, text: string) => void;
   formatCategoryName: (category: string) => string;
   renderDescriptionWithLinks: (desc: string, cardTitle: string) => React.ReactNode;
+  onRenameList?: (category: string, newName: string) => void;
+  onDeleteList?: (category: string) => void;
+  onAddList?: (name: string) => void;
 }
 
 export const TaskBoardView: React.FC<TaskBoardViewProps> = ({
@@ -97,6 +100,9 @@ export const TaskBoardView: React.FC<TaskBoardViewProps> = ({
   onAddChecklistItem,
   formatCategoryName,
   renderDescriptionWithLinks,
+  onRenameList,
+  onDeleteList,
+  onAddList,
 }) => {
   return (
     <div
@@ -200,6 +206,8 @@ export const TaskBoardView: React.FC<TaskBoardViewProps> = ({
                     category={category}
                     displayName={displayName}
                     tasks={tasks}
+                    onRenameList={onRenameList}
+                    onDeleteList={onDeleteList}
                   >
                   {/* Per-column SortableContext - only cards in THIS column shift */}
                   <SortableContext
@@ -282,21 +290,69 @@ export const TaskBoardView: React.FC<TaskBoardViewProps> = ({
             })}
             </SortableContext>
 
-            {/* Add another list button */}
-            <button
-              onClick={() => {
-                onSetAddingTaskToCategory('new_list');
-                onSetNewTaskText('');
-              }}
-              className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
-                       rounded-xl text-white text-sm font-medium
-                       transition-all flex items-center gap-2 h-fit"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add another list
-            </button>
+            {/* Add another list button/form */}
+            {addingTaskToCategory === 'new_list' ? (
+              <div className="w-[280px] flex-shrink-0 bg-[#101204] rounded-xl p-2">
+                <input
+                  type="text"
+                  value={newTaskText}
+                  onChange={(e) => onSetNewTaskText(e.target.value)}
+                  placeholder="Enter list name..."
+                  autoFocus
+                  className="w-full bg-[#22272b] border border-[#5a6370] rounded px-3 py-2 text-white text-sm
+                           placeholder-white/40 focus:outline-none focus:border-accent mb-2"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newTaskText.trim() && onAddList) {
+                      onAddList(newTaskText.trim());
+                      onSetNewTaskText('');
+                      onSetAddingTaskToCategory(null);
+                    }
+                    if (e.key === 'Escape') {
+                      onSetAddingTaskToCategory(null);
+                      onSetNewTaskText('');
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (newTaskText.trim() && onAddList) {
+                        onAddList(newTaskText.trim());
+                        onSetNewTaskText('');
+                        onSetAddingTaskToCategory(null);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-[#579dff] hover:bg-[#4a8fe8] text-white text-xs font-medium rounded transition-all"
+                  >
+                    Add List
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSetAddingTaskToCategory(null);
+                      onSetNewTaskText('');
+                    }}
+                    className="px-3 py-1.5 text-white/60 hover:text-white hover:bg-[#3d444d] text-xs rounded transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  onSetAddingTaskToCategory('new_list');
+                  onSetNewTaskText('');
+                }}
+                className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
+                         rounded-xl text-white text-sm font-medium
+                         transition-all flex items-center gap-2 h-fit"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add another list
+              </button>
+            )}
             </div>
 
           {/* Drag overlay - shows dragged card or column without affecting original */}

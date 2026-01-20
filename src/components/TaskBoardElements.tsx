@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -18,12 +18,20 @@ export function SortableTaskColumn({
   displayName,
   tasks,
   children,
+  onRenameList,
+  onDeleteList,
 }: {
   category: string;
   displayName: string;
   tasks: TaskItem[];
   children: React.ReactNode;
+  onRenameList?: (category: string, newName: string) => void;
+  onDeleteList?: (category: string) => void;
 }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(displayName);
+
   // Sortable for column reordering
   const {
     attributes,
@@ -55,6 +63,21 @@ export function SortableTaskColumn({
     opacity: isColumnDragging ? 0.5 : 1,
   };
 
+  const handleRename = () => {
+    if (newName.trim() && newName !== displayName && onRenameList) {
+      onRenameList(category, newName.trim());
+    }
+    setIsRenaming(false);
+    setShowMenu(false);
+  };
+
+  const handleDelete = () => {
+    if (onDeleteList) {
+      onDeleteList(category);
+    }
+    setShowMenu(false);
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -63,17 +86,89 @@ export function SortableTaskColumn({
         ${isOver && !isColumnDragging ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
     >
       {/* Column header - drag handle for column reordering */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="px-3 py-2.5 flex items-center justify-between cursor-grab active:cursor-grabbing"
-      >
-        <h3 className="text-[#b6c2cf] text-sm font-semibold">
-          {displayName}
-        </h3>
-        <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
-          {tasks.length}
-        </span>
+      <div className="px-3 py-2.5 flex items-center justify-between">
+        {isRenaming ? (
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onBlur={handleRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRename();
+              if (e.key === 'Escape') {
+                setNewName(displayName);
+                setIsRenaming(false);
+              }
+            }}
+            autoFocus
+            className="flex-1 bg-[#22272b] border border-[#579dff] rounded px-2 py-1 text-[#b6c2cf] text-sm font-semibold focus:outline-none"
+          />
+        ) : (
+          <div
+            {...attributes}
+            {...listeners}
+            className="flex-1 cursor-grab active:cursor-grabbing"
+          >
+            <h3 className="text-[#b6c2cf] text-sm font-semibold">
+              {displayName}
+            </h3>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
+            {tasks.length}
+          </span>
+
+          {/* Menu button */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-1 text-[#9fadbc] hover:text-white hover:bg-[#22272b] rounded transition-colors"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
+              </svg>
+            </button>
+
+            {/* Dropdown menu */}
+            {showMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowMenu(false)}
+                />
+                <div className="absolute right-0 top-8 z-50 w-48 bg-[#282e33] border border-[#3d444d] rounded-lg shadow-xl py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <button
+                    onClick={() => {
+                      setIsRenaming(true);
+                      setNewName(displayName);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-[#b6c2cf] hover:bg-[#3d444d] flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Rename list
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-[#3d444d] flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete list
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Cards container */}

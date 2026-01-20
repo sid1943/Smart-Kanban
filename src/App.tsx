@@ -3185,6 +3185,87 @@ export default function App() {
     }));
   };
 
+  // Rename a list/column
+  const handleRenameList = (category: string, newName: string) => {
+    if (!activeGoalId || !newName.trim()) return;
+
+    // Convert new name to a category-safe format (lowercase, underscores)
+    const newCategory = newName.trim().toLowerCase().replace(/\s+/g, '_');
+
+    // Don't rename if it's the same
+    if (newCategory === category) return;
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Update column order
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+        const newOrder = currentOrder.map(col => col === category ? newCategory : col);
+
+        // Update all tasks in this category
+        const updatedTasks = goal.tasks.map(task =>
+          task.category === category ? { ...task, category: newCategory } : task
+        );
+
+        return {
+          ...goal,
+          columnOrder: newOrder,
+          tasks: updatedTasks,
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
+  // Delete a list/column (removes all tasks in it)
+  const handleDeleteList = (category: string) => {
+    if (!activeGoalId) return;
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Remove from column order
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+        const newOrder = currentOrder.filter(col => col !== category);
+
+        // Remove all tasks in this category
+        const updatedTasks = goal.tasks.filter(task => task.category !== category);
+
+        return {
+          ...goal,
+          columnOrder: newOrder,
+          tasks: updatedTasks,
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
+  // Add a new list/column
+  const handleAddList = (name: string) => {
+    if (!activeGoalId || !name.trim()) return;
+
+    // Convert name to a category-safe format
+    const category = name.trim().toLowerCase().replace(/\s+/g, '_');
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Get current column order and add new column at the end
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+
+        // Don't add if already exists
+        if (currentOrder.includes(category)) return goal;
+
+        return {
+          ...goal,
+          columnOrder: [...currentOrder, category],
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
   // Add a new task manually
   const handleAddTask = (text: string, category?: string) => {
     if (!activeGoalId || !text.trim()) return;
@@ -4928,6 +5009,9 @@ export default function App() {
       onAddChecklistItem={handleAddChecklistItem}
       formatCategoryName={formatCategoryName}
       renderDescriptionWithLinks={renderDescriptionWithLinks}
+      onRenameList={handleRenameList}
+      onDeleteList={handleDeleteList}
+      onAddList={handleAddList}
     />
   );
 }
