@@ -295,13 +295,10 @@ export function WorkspaceTile({
 
         {/* Header */}
         <div className="live-tile-header">
-          <div className="live-tile-icon">{workspace.icon || workspace.name[0]}</div>
-          <div className="live-tile-title-section">
-            <h3 className="live-tile-title">{workspace.name}</h3>
-            {workspace.description && (
-              <p className="live-tile-subtitle">{workspace.description}</p>
-            )}
-          </div>
+          {workspace.icon && (
+            <div className="live-tile-icon">{workspace.icon}</div>
+          )}
+          <h3 className="live-tile-title">{workspace.name}</h3>
         </div>
 
         {/* Stats Grid */}

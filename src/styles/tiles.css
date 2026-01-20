@@ -63,21 +63,24 @@
 /* TILE SIZES                                     */
 /* ============================================== */
 
-/* Compact: 1 column, shorter */
+/* Compact: 1 column, square */
 .live-tile-small {
   grid-column: span 1;
-  min-height: 200px;
+  aspect-ratio: 1 / 1;
+  min-height: 220px;
 }
 
-/* Standard: 1 column, medium height */
+/* Standard: 1 column, square */
 .live-tile-medium {
   grid-column: span 1;
+  aspect-ratio: 1 / 1;
   min-height: 280px;
 }
 
-/* Large: 2 columns, taller */
+/* Large: 2 columns, square */
 .live-tile-wide {
   grid-column: span 2;
+  aspect-ratio: 1 / 1;
   min-height: 320px;
 }
 
@@ -109,39 +112,24 @@
 
 .live-tile-header {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
 }
 
 .live-tile-icon {
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
   flex-shrink: 0;
 }
 
-.live-tile-title-section {
-  flex: 1;
-  min-width: 0;
-}
-
 .live-tile-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.3px;
   margin: 0;
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.live-tile-subtitle {
-  font-size: 12px;
-  opacity: 0.85;
-  margin: 2px 0 0 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ============================================== */
