@@ -1,0 +1,624 @@
+/* Live Tiles Styles */
+
+/* ============================================== */
+/* TILE GRID SYSTEM                               */
+/* ============================================== */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  padding: 2px;
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 1280px) {
+  .tile-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tile-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .tile-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================== */
+/* TILE BASE                                      */
+/* ============================================== */
+
+.tile {
+  position: relative;
+  perspective: 800px;
+  cursor: pointer;
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.tile:hover {
+  transform: scale(1.03) translateY(-2px);
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.tile:active {
+  transform: scale(0.97);
+}
+
+/* ============================================== */
+/* TILE SIZES - COMPACT                           */
+/* ============================================== */
+
+/* Small Tile: 1x1 */
+.tile-small {
+  grid-column: span 1;
+  grid-row: span 1;
+  aspect-ratio: 1 / 1;
+  min-height: 110px;
+}
+
+/* Medium Tile: 2x1 */
+.tile-medium {
+  grid-column: span 2;
+  grid-row: span 1;
+  min-height: 120px;
+}
+
+/* Wide Tile: 3x1 */
+.tile-wide {
+  grid-column: span 3;
+  grid-row: span 1;
+  min-height: 120px;
+}
+
+/* Responsive tile sizing */
+@media (max-width: 768px) {
+  .tile-wide {
+    grid-column: span 3;
+  }
+  .tile-medium {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 480px) {
+  .tile-wide {
+    grid-column: span 2;
+  }
+  .tile-small {
+    min-height: 64px;
+  }
+}
+
+/* ============================================== */
+/* FLIP ANIMATION SYSTEM                          */
+/* ============================================== */
+
+.tile-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.tile.flipped .tile-inner {
+  transform: rotateX(180deg);
+}
+
+.tile-front,
+.tile-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tile-front {
+  transform: rotateX(0deg);
+}
+
+.tile-back {
+  transform: rotateX(180deg);
+}
+
+/* ============================================== */
+/* TILE CONTENT STYLES                            */
+/* ============================================== */
+
+.tile-content {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: white;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Animated gradient overlay */
+.tile-content::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  animation: shimmer 3s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+/* Typography */
+.tile-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-number {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -1px;
+  animation: countPulse 2s ease-in-out infinite;
+}
+
+@keyframes countPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.tile-number-label {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: lowercase;
+  opacity: 0.85;
+  margin-top: 1px;
+}
+
+.tile-stats {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tile-stats-separator {
+  opacity: 0.5;
+}
+
+.tile-activity {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-activity-icon {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Task preview */
+.tile-task-preview {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.9;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.tile-task-checkbox {
+  font-size: 11px;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+/* Stats row */
+.tile-stats-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.tile-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tile-stat-value {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.tile-stat-label {
+  font-size: 9px;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Icon positioning */
+.tile-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Progress bar */
+.tile-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  transition: width 0.5s ease-out;
+}
+
+.tile-progress-fill {
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================== */
+/* SMALL TILE SPECIFIC                            */
+/* ============================================== */
+
+.tile-small .tile-content {
+  padding: 10px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.tile-small .tile-icon {
+  font-size: 20px;
+}
+
+.tile-small .tile-number {
+  font-size: 28px;
+  font-weight: 300;
+}
+
+.tile-small .tile-label {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.tile-small .tile-number-label {
+  display: none;
+}
+
+.tile-small .tile-content::after {
+  display: none;
+}
+
+/* ============================================== */
+/* MEDIUM TILE SPECIFIC                           */
+/* ============================================== */
+
+.tile-medium .tile-content {
+  padding: 12px 14px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.tile-medium .tile-header {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.tile-medium .tile-title {
+  font-size: 15px;
+}
+
+.tile-medium .tile-stats {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.tile-medium .tile-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tile-medium .tile-number {
+  font-size: 28px;
+}
+
+.tile-medium .tile-number-label {
+  font-size: 10px;
+}
+
+/* ============================================== */
+/* WIDE TILE SPECIFIC                             */
+/* ============================================== */
+
+.tile-wide .tile-content {
+  padding: 14px 16px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.tile-wide .tile-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tile-wide .tile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tile-wide .tile-title {
+  font-size: 16px;
+}
+
+.tile-wide .tile-stats {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.tile-wide .tile-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tile-wide .tile-number {
+  font-size: 32px;
+}
+
+.tile-wide .tile-activity {
+  max-width: 160px;
+}
+
+/* ============================================== */
+/* BACK FACE CONTENT                              */
+/* ============================================== */
+
+.tile-back .tile-content {
+  justify-content: center;
+  align-items: center;
+}
+
+.tile-back .tile-boards-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.tile-back .tile-board-item {
+  font-size: 11px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-back .tile-board-item:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.tile-back .tile-board-item:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.tile-back .tile-completion {
+  text-align: center;
+}
+
+.tile-back .tile-completion-number {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.tile-back .tile-completion-label {
+  font-size: 10px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* ============================================== */
+/* CONTEXT MENU                                   */
+/* ============================================== */
+
+.tile-context-menu {
+  position: fixed;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 140px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: menuFadeIn 0.15s ease-out;
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  color: #e0e0e0;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tile-context-menu-item:hover {
+  background: #094771;
+}
+
+.tile-context-menu-item.active {
+  background: rgba(0, 120, 215, 0.3);
+}
+
+.tile-context-menu-item.active::before {
+  content: '✓';
+  margin-right: -4px;
+  font-size: 10px;
+}
+
+.tile-context-menu-header {
+  padding: 6px 12px 4px;
+  color: #9d9d9d;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================== */
+/* HOVER & ACTIVE EFFECTS                         */
+/* ============================================== */
+
+.tile:hover .tile-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.tile:hover .tile-content::after {
+  animation: none;
+  opacity: 0;
+}
+
+/* Active indicator dot */
+.tile-active-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.2);
+  }
+}
+
+/* ============================================== */
+/* REDUCED MOTION                                 */
+/* ============================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-inner {
+    transition: none;
+  }
+
+  .tile.flipped .tile-inner {
+    transform: none;
+  }
+
+  .tile-back {
+    display: none;
+  }
+
+  .tile:hover {
+    transform: none;
+  }
+
+  .tile-content::after,
+  .tile-number,
+  .tile-activity-icon,
+  .tile-active-dot {
+    animation: none;
+  }
+}

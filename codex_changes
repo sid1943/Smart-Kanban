@@ -11,4 +11,8 @@ Codex changes log
 - Moved task/profile/trello types into src/types and wired imports.
 - Extracted Profile view into src/components/ProfileView.tsx and wired App.tsx.
 - Extracted Trello parsing into src/features/trelloImport.ts and simplified App.tsx import flow.
-- Fixed build issues after refactor; npm run build now passes.
+- Extracted ICS parsing into src/features/calendarImport.ts and wired App.tsx.
+- Extracted task board elements into src/components/TaskBoardElements.tsx and wired App.tsx.
+- Build passes after latest refactor.
+- Extracted Calendar view into src/components/CalendarView.tsx and wired App.tsx.
+- Extracted main task board view into src/components/TaskBoardView.tsx and wired App.tsx.

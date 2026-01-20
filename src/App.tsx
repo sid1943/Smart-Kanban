@@ -2,8 +2,9 @@
 import { useNewContentScanner } from './hooks/useNewContentScanner';
 import { enrichFromTMDb } from './engine/enrichment/tmdb';
 import { ContentType, UpcomingContent } from './engine/types';
-import { getContentKindLabel, isUpcoming, getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
+import { getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
 import { getOrchestrator } from './engine/agents/AgentOrchestrator';
+import { parseICS, type CalendarEvent } from './features/calendarImport';
 import { parseTrelloExport } from './features/trelloImport';
 import { Attachment, Checklist, ChecklistItem, Comment, ExtractedLink, TaskItem, TaskLabel } from './types/tasks';
 import { ProfileCategory, ProfileField, ProfileFieldData } from './types/profile';
@@ -19,12 +20,13 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
-  useDroppable,
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
-import TaskDetailModal from './components/TaskDetailModal';
 import ProfileView from './components/ProfileView';
-import { WorkspaceBlock } from './components/WorkspaceBlock';
+import CalendarView from './components/CalendarView';
+import TaskBoardView from './components/TaskBoardView';
+import { TileGrid, TileSize } from './components/TileGrid';
+import './styles/tiles.css';
 import { WorkspaceSelectModal } from './components/WorkspaceSelectModal';
 import {
   arrayMove,
@@ -49,116 +51,6 @@ interface UserInfoItem {
   documentType?: string; // MIME type
 }
 
-// Calendar event definition
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description?: string;
-  startDate: Date;
-  endDate: Date;
-  location?: string;
-  isAllDay: boolean;
-  source: 'imported' | 'manual';
-  sourceFile?: string;
-}
-
-// Parse ICS file content
-const parseICS = (content: string, sourceFile: string): CalendarEvent[] => {
-  const events: CalendarEvent[] = [];
-  const lines = content.split(/\r?\n/);
-
-  let currentEvent: Partial<CalendarEvent> | null = null;
-  let inEvent = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Handle line folding (lines starting with space/tab are continuations)
-    while (i + 1 < lines.length && (lines[i + 1].startsWith(' ') || lines[i + 1].startsWith('\t'))) {
-      line += lines[++i].substring(1);
-    }
-
-    if (line.startsWith('BEGIN:VEVENT')) {
-      inEvent = true;
-      currentEvent = {
-        id: `cal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        source: 'imported',
-        sourceFile,
-        isAllDay: false,
-      };
-    } else if (line.startsWith('END:VEVENT') && currentEvent) {
-      if (currentEvent.title && currentEvent.startDate) {
-        events.push(currentEvent as CalendarEvent);
-      }
-      currentEvent = null;
-      inEvent = false;
-    } else if (inEvent && currentEvent) {
-      const colonIndex = line.indexOf(':');
-      if (colonIndex > 0) {
-        const key = line.substring(0, colonIndex).split(';')[0];
-        const value = line.substring(colonIndex + 1);
-
-        switch (key) {
-          case 'SUMMARY':
-            currentEvent.title = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'DESCRIPTION':
-            currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'LOCATION':
-            currentEvent.location = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'DTSTART':
-            if (line.includes('VALUE=DATE:') || value.length === 8) {
-              currentEvent.isAllDay = true;
-              const year = parseInt(value.substring(0, 4));
-              const month = parseInt(value.substring(4, 6)) - 1;
-              const day = parseInt(value.substring(6, 8));
-              currentEvent.startDate = new Date(year, month, day);
-            } else {
-              const parsed = parseICSDateTime(value);
-              if (parsed) currentEvent.startDate = parsed;
-            }
-            break;
-          case 'DTEND':
-            if (line.includes('VALUE=DATE:') || value.length === 8) {
-              const year = parseInt(value.substring(0, 4));
-              const month = parseInt(value.substring(4, 6)) - 1;
-              const day = parseInt(value.substring(6, 8));
-              currentEvent.endDate = new Date(year, month, day);
-            } else {
-              const parsed = parseICSDateTime(value);
-              if (parsed) currentEvent.endDate = parsed;
-            }
-            break;
-        }
-      }
-    }
-  }
-
-  return events;
-};
-
-// Parse ICS datetime format (YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ)
-const parseICSDateTime = (value: string): Date | null => {
-  try {
-    const dateStr = value.replace('Z', '');
-    const year = parseInt(dateStr.substring(0, 4));
-    const month = parseInt(dateStr.substring(4, 6)) - 1;
-    const day = parseInt(dateStr.substring(6, 8));
-    const hour = dateStr.length >= 11 ? parseInt(dateStr.substring(9, 11)) : 0;
-    const minute = dateStr.length >= 13 ? parseInt(dateStr.substring(11, 13)) : 0;
-    const second = dateStr.length >= 15 ? parseInt(dateStr.substring(13, 15)) : 0;
-
-    if (value.endsWith('Z')) {
-      return new Date(Date.UTC(year, month, day, hour, minute, second));
-    }
-    return new Date(year, month, day, hour, minute, second);
-  } catch {
-    return null;
-  }
-};
-
 // Parse Trello JSON export
 interface TrelloImportResult {
   boardName: string;
@@ -182,6 +74,7 @@ interface Workspace {
   order?: number;                     // display order
   autoCategories?: ContentType[];     // content types that auto-assign to this workspace
   goalTypes?: string[];               // goal types that auto-assign to this workspace
+  tileSize?: TileSize;                // tile size preference for dashboard
 }
 
 // Workspace summary for dashboard display
@@ -1793,351 +1686,6 @@ function SortableColumn({
   );
 }
 
-// Sortable Task Card Component for Kanban board
-function SortableTaskCard({
-  task,
-  onSelect,
-  getContentKindLabel,
-  isUpcoming,
-}: {
-  task: TaskItem;
-  onSelect: () => void;
-  getContentKindLabel: (kind: string) => string;
-  isUpcoming: (date?: string) => boolean;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease',
-    // Hide original when dragging - DragOverlay shows the visual
-    opacity: isDragging ? 0 : 1,
-    zIndex: isDragging ? 1000 : 1,
-    touchAction: 'none',
-  };
-
-  const colorMap: Record<string, string> = {
-    green: 'bg-green-600',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-    purple: 'bg-purple-500',
-    blue: 'bg-blue-500',
-    sky: 'bg-sky-500',
-    lime: 'bg-lime-500',
-    pink: 'bg-pink-500',
-    black: 'bg-gray-700',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`rounded-lg px-3 py-2 shadow-sm transition-all group
-        ${task.hasNewContent
-          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
-          : 'bg-[#22272b] hover:bg-[#2c323a]'
-        }
-        ${task.checked ? 'opacity-60' : ''}
-        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
-    >
-      {/* Drag handle at top */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-0 left-0 w-full h-5 cursor-grab active:cursor-grabbing"
-      />
-
-      <div onClick={onSelect} className="cursor-pointer relative">
-        {/* Labels */}
-        {task.labels && task.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {task.labels.map((label, idx) => (
-              <span
-                key={idx}
-                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
-              >
-                {label.name}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
-          {task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
-              {task.upcomingContent
-                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
-                : 'NEW'}
-            </span>
-          )}
-          {task.showStatus === 'ongoing' && !task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
-              Returning
-            </span>
-          )}
-          {task.showStatus === 'ended' && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
-              Ended
-            </span>
-          )}
-        </div>
-
-        {/* Upcoming content date */}
-        {task.upcomingContent && (
-          <div className="text-[10px] text-amber-400 mt-0.5">
-            {task.upcomingContent.title}
-            {task.upcomingContent.releaseDate && (
-              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-            )}
-          </div>
-        )}
-
-        {/* Checklist progress */}
-        {task.checklistTotal && task.checklistTotal > 0 && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              <span>{task.checklistChecked}/{task.checklistTotal}</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Sortable + Droppable Column for Task Board (can be dragged to reorder AND accepts card drops)
-function SortableTaskColumn({
-  category,
-  displayName,
-  tasks,
-  children,
-}: {
-  category: string;
-  displayName: string;
-  tasks: TaskItem[];
-  children: React.ReactNode;
-}) {
-  // Sortable for column reordering
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging: isColumnDragging,
-  } = useSortable({
-    id: `column-${category}`,
-    data: { type: 'column', category },
-  });
-
-  // Droppable for accepting cards
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: `column-${category}`,
-    data: { type: 'column', category },
-  });
-
-  // Combine refs
-  const setNodeRef = (node: HTMLDivElement | null) => {
-    setSortableRef(node);
-    setDroppableRef(node);
-  };
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isColumnDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`w-[280px] flex-shrink-0 bg-[#101204] rounded-xl flex flex-col max-h-full transition-all
-        ${isOver && !isColumnDragging ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
-    >
-      {/* Column header - drag handle for column reordering */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="px-3 py-2.5 flex items-center justify-between cursor-grab active:cursor-grabbing"
-      >
-        <h3 className="text-[#b6c2cf] text-sm font-semibold">
-          {displayName}
-        </h3>
-        <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
-          {tasks.length}
-        </span>
-      </div>
-
-      {/* Cards container */}
-      <div className="px-2 pb-2 space-y-2 overflow-y-auto flex-1 min-h-[100px]">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// Sortable wrapper for task cards with full rendering
-function SortableTaskCardWrapper({
-  task,
-  onSelect,
-  infoMatch,
-}: {
-  task: TaskItem;
-  onSelect: () => void;
-  infoMatch: { matched: boolean; info?: { label: string; value: string; expiryDate?: string }; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' };
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease',
-    // Hide original when dragging - DragOverlay shows the visual
-    opacity: isDragging ? 0 : 1,
-    zIndex: isDragging ? 1000 : 1,
-    touchAction: 'none',
-  };
-
-  const colorMap: Record<string, string> = {
-    green: 'bg-green-600',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-    purple: 'bg-purple-500',
-    blue: 'bg-blue-500',
-    sky: 'bg-sky-500',
-    lime: 'bg-lime-500',
-    pink: 'bg-pink-500',
-    black: 'bg-gray-700',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      data-task-card="true"
-      {...attributes}
-      {...listeners}
-      onClick={(e) => {
-        if (!isDragging) {
-          e.stopPropagation();
-          onSelect();
-        }
-      }}
-      className={`rounded-lg shadow-sm transition-all relative cursor-grab active:cursor-grabbing px-3 py-2
-        ${task.hasNewContent
-          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
-          : 'bg-[#22272b] hover:bg-[#2c323a]'
-        }
-        ${task.checked ? 'opacity-60' : ''}
-        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
-    >
-      <div className="flex-1 min-w-0">
-        {/* Labels */}
-        {task.labels && task.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {task.labels.map((label, idx) => (
-              <span
-                key={idx}
-                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
-              >
-                {label.name}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
-          {task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
-              {task.upcomingContent
-                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
-                : 'NEW'}
-            </span>
-          )}
-          {task.showStatus === 'ongoing' && !task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
-              Returning
-            </span>
-          )}
-          {task.showStatus === 'ended' && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
-              Ended
-            </span>
-          )}
-        </div>
-        {/* Upcoming content date */}
-        {task.upcomingContent && (
-          <div className="text-[10px] text-amber-400 mt-0.5">
-            {task.upcomingContent.title}
-            {task.upcomingContent.releaseDate && (
-              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-            )}
-          </div>
-        )}
-        {/* Checklist progress */}
-        {task.checklistTotal && task.checklistTotal > 0 && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              {task.checklistChecked}/{task.checklistTotal}
-            </div>
-          </div>
-        )}
-        {infoMatch.matched && (infoMatch.info || infoMatch.profileMatch) && !task.checked && (
-          <div className="flex items-center gap-1.5 mt-1">
-            {infoMatch.status === 'valid' && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Valid until {new Date(infoMatch.profileMatch?.expiry || infoMatch.info?.expiryDate || '').toLocaleDateString()}
-              </span>
-            )}
-            {infoMatch.status === 'done' && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                {infoMatch.profileMatch?.label || infoMatch.info?.label}: {infoMatch.profileMatch?.value || infoMatch.info?.value}
-              </span>
-            )}
-            {infoMatch.status === 'expired' && (
-              <span className="text-xs text-red-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                Expired - needs renewal!
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   // Track whether initial load from localStorage has completed
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -2224,6 +1772,17 @@ export default function App() {
 
   // Dynamic Workspace Blocks state
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
+  const [tileSizes, setTileSizes] = useState<Map<string, TileSize>>(() => {
+    const saved = localStorage.getItem('workspace-tile-sizes');
+    if (saved) {
+      try {
+        return new Map(JSON.parse(saved));
+      } catch {
+        return new Map();
+      }
+    }
+    return new Map();
+  });
   const [showWorkspaceSelectModal, setShowWorkspaceSelectModal] = useState(false);
   const [pendingBoardForWorkspace, setPendingBoardForWorkspace] = useState<StoredGoal | null>(null);
   const [suggestedWorkspaceId, setSuggestedWorkspaceId] = useState<string | null>(null);
@@ -3912,6 +3471,16 @@ export default function App() {
     });
   }, []);
 
+  // Handle tile size change with persistence
+  const handleTileSizeChange = useCallback((workspaceId: string, size: TileSize) => {
+    setTileSizes(prev => {
+      const next = new Map(prev);
+      next.set(workspaceId, size);
+      localStorage.setItem('workspace-tile-sizes', JSON.stringify(Array.from(next.entries())));
+      return next;
+    });
+  }, []);
+
   // Home view - Workspaces and Boards
   if (viewMode === 'home') {
     const recentGoals = [...goals].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
@@ -4094,34 +3663,27 @@ export default function App() {
               </button>
             </div>
 
-            {/* Workspace Blocks Grid */}
+            {/* Workspace Tiles Grid */}
             {workspaces.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[...workspaces].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(workspace => {
-                  const workspaceBoards = getBoardsForWorkspace(workspace.id);
-
-                  return (
-                    <WorkspaceBlock
-                      key={workspace.id}
-                      workspace={workspace}
-                      boards={workspaceBoards}
-                      isExpanded={expandedWorkspaces.has(workspace.id)}
-                      onToggleExpand={() => toggleWorkspaceExpansion(workspace.id)}
-                      onSelectBoard={(boardId) => {
-                        const goal = goals.find(g => g.id === boardId);
-                        if (goal) {
-                          setActiveGoalId(boardId);
-                          setViewMode('goal');
-                          if (goal.backgroundImage) {
-                            setSelectedBackground(goal.backgroundImage);
-                          }
-                        }
-                      }}
-                      onAddBoard={handleStartNewGoal}
-                    />
-                  );
-                })}
-              </div>
+              <TileGrid
+                workspaces={workspaces}
+                getBoardsForWorkspace={getBoardsForWorkspace}
+                expandedWorkspaces={expandedWorkspaces}
+                tileSizes={tileSizes}
+                onToggleExpand={toggleWorkspaceExpansion}
+                onSelectBoard={(boardId) => {
+                  const goal = goals.find(g => g.id === boardId);
+                  if (goal) {
+                    setActiveGoalId(boardId);
+                    setViewMode('goal');
+                    if (goal.backgroundImage) {
+                      setSelectedBackground(goal.backgroundImage);
+                    }
+                  }
+                }}
+                onAddBoard={handleStartNewGoal}
+                onTileSizeChange={handleTileSizeChange}
+              />
             ) : (
               /* Empty state when no workspaces */
               <div className="text-center py-12 bg-[#22272b] rounded-xl border border-[#3d444d]/50">
@@ -4679,340 +4241,48 @@ export default function App() {
   // Calendar view
   if (viewMode === 'calendar') {
     const calendarDays = getCalendarDays(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth());
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const selectedDateEvents = getEventsForDate(selectedCalendarDate);
 
     return (
-      <div className="min-h-screen bg-[#1d2125]">
-        {/* Header */}
-        <div className="bg-[#1d2125] border-b border-[#3d444d] px-4 py-3 sticky top-0 z-10">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => setViewMode('home')}
-              className="flex items-center gap-2 text-[#9fadbc] hover:text-white transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
-            <h1 className="text-xl font-bold text-white">Calendar</h1>
-            <div className="flex items-center gap-2">
-              <label className="px-4 py-2 bg-[#3d444d] hover:bg-[#4d545d] text-white font-medium
-                             rounded transition-all text-sm flex items-center gap-2 cursor-pointer">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Import .ics
-                <input
-                  type="file"
-                  accept=".ics"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImportICS(file);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-              <button
-                onClick={() => {
-                  const today = new Date();
-                  setNewEventDate(today.toISOString().split('T')[0]);
-                  setShowAddEventModal(true);
-                }}
-                className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white font-medium
-                         rounded transition-all text-sm flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Event
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Calendar Grid */}
-            <div className="lg:col-span-2 bg-[#22272b] rounded-xl p-4 border border-[#3d444d]">
-              {/* Month Navigation */}
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() - 1, 1))}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <h2 className="text-white font-semibold text-lg">
-                  {monthNames[selectedCalendarDate.getMonth()]} {selectedCalendarDate.getFullYear()}
-                </h2>
-                <button
-                  onClick={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() + 1, 1))}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Day Headers */}
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {dayNames.map(day => (
-                  <div key={day} className="text-center text-[#9fadbc] text-xs font-medium py-2">
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              {/* Calendar Days */}
-              <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map((day, idx) => {
-                  const dayEvents = getEventsForDate(day.date);
-                  const isToday = day.date.getTime() === today.getTime();
-                  const isSelected = day.date.toDateString() === selectedCalendarDate.toDateString();
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedCalendarDate(day.date)}
-                      className={`aspect-square p-1 rounded-lg transition-all relative
-                                ${day.isCurrentMonth ? 'text-white' : 'text-[#9fadbc]/50'}
-                                ${isSelected ? 'bg-[#579dff]' : isToday ? 'bg-[#3d444d]' : 'hover:bg-[#3d444d]'}`}
-                    >
-                      <span className="text-sm">{day.date.getDate()}</span>
-                      {dayEvents.length > 0 && (
-                        <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 flex gap-0.5">
-                          {dayEvents.slice(0, 3).map((_, i) => (
-                            <div key={i} className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-[#579dff]'}`} />
-                          ))}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Events List */}
-            <div className="bg-[#22272b] rounded-xl p-4 border border-[#3d444d]">
-              <h3 className="text-white font-semibold mb-4">
-                {selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </h3>
-
-              {selectedDateEvents.length === 0 ? (
-                <p className="text-[#9fadbc] text-sm">No events for this day</p>
-              ) : (
-                <div className="space-y-3">
-                  {selectedDateEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className="bg-[#1a1f26] rounded-lg p-3 border border-[#3d444d]"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="text-white font-medium text-sm">{event.title}</h4>
-                          {!event.isAllDay && (
-                            <p className="text-[#9fadbc] text-xs mt-1">
-                              {event.startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                              {event.endDate && ` - ${event.endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-                            </p>
-                          )}
-                          {event.isAllDay && (
-                            <p className="text-[#9fadbc] text-xs mt-1">All day</p>
-                          )}
-                          {event.location && (
-                            <p className="text-[#9fadbc] text-xs mt-1 flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              {event.location}
-                            </p>
-                          )}
-                          {event.source === 'imported' && event.sourceFile && (
-                            <p className="text-[#9fadbc]/60 text-xs mt-1">Imported from {event.sourceFile}</p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleDeleteCalendarEvent(event.id)}
-                          className="p-1 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Upcoming Events */}
-              {calendarEvents.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-[#3d444d]">
-                  <h4 className="text-[#9fadbc] text-xs font-semibold uppercase tracking-wider mb-3">Upcoming Events</h4>
-                  <div className="space-y-2">
-                    {calendarEvents
-                      .filter(e => new Date(e.startDate) >= today)
-                      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                      .slice(0, 5)
-                      .map(event => (
-                        <div
-                          key={event.id}
-                          onClick={() => setSelectedCalendarDate(new Date(event.startDate))}
-                          className="text-sm text-[#9fadbc] hover:text-white cursor-pointer transition-all"
-                        >
-                          <span className="text-[#579dff] text-xs mr-2">
-                            {new Date(event.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                          {event.title}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Add Event Modal */}
-        {showAddEventModal && (
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-16 px-4"
-            onClick={() => setShowAddEventModal(false)}
-          >
-            <div
-              className="bg-[#1a1f26] rounded-xl w-full max-w-md shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-6 py-4 border-b border-[#3d444d] flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Add Event</h2>
-                <button
-                  onClick={() => setShowAddEventModal(false)}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="text-[#9fadbc] text-sm mb-2 block">Title</label>
-                  <input
-                    type="text"
-                    value={newEventTitle}
-                    onChange={(e) => setNewEventTitle(e.target.value)}
-                    placeholder="Event title"
-                    className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                             focus:outline-none focus:border-[#579dff] text-sm"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="allDay"
-                    checked={newEventIsAllDay}
-                    onChange={(e) => setNewEventIsAllDay(e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#22272b] border-[#3d444d]"
-                  />
-                  <label htmlFor="allDay" className="text-[#9fadbc] text-sm">All day event</label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[#9fadbc] text-sm mb-2 block">Start Date</label>
-                    <input
-                      type="date"
-                      value={newEventDate}
-                      onChange={(e) => setNewEventDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                               focus:outline-none focus:border-[#579dff] text-sm"
-                    />
-                  </div>
-                  {!newEventIsAllDay && (
-                    <div>
-                      <label className="text-[#9fadbc] text-sm mb-2 block">Start Time</label>
-                      <input
-                        type="time"
-                        value={newEventTime}
-                        onChange={(e) => setNewEventTime(e.target.value)}
-                        className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                                 focus:outline-none focus:border-[#579dff] text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[#9fadbc] text-sm mb-2 block">End Date</label>
-                    <input
-                      type="date"
-                      value={newEventEndDate}
-                      onChange={(e) => setNewEventEndDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                               focus:outline-none focus:border-[#579dff] text-sm"
-                    />
-                  </div>
-                  {!newEventIsAllDay && (
-                    <div>
-                      <label className="text-[#9fadbc] text-sm mb-2 block">End Time</label>
-                      <input
-                        type="time"
-                        value={newEventEndTime}
-                        onChange={(e) => setNewEventEndTime(e.target.value)}
-                        className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                                 focus:outline-none focus:border-[#579dff] text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-[#9fadbc] text-sm mb-2 block">Location (optional)</label>
-                  <input
-                    type="text"
-                    value={newEventLocation}
-                    onChange={(e) => setNewEventLocation(e.target.value)}
-                    placeholder="Event location"
-                    className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                             focus:outline-none focus:border-[#579dff] text-sm"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <button
-                    onClick={() => setShowAddEventModal(false)}
-                    className="px-4 py-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddCalendarEvent}
-                    disabled={!newEventTitle.trim() || !newEventDate}
-                    className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded text-sm
-                             disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add Event
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <CalendarView
+        selectedCalendarDate={selectedCalendarDate}
+        calendarDays={calendarDays}
+        selectedDateEvents={selectedDateEvents}
+        calendarEvents={calendarEvents}
+        getEventsForDate={getEventsForDate}
+        today={today}
+        showAddEventModal={showAddEventModal}
+        newEventTitle={newEventTitle}
+        newEventDate={newEventDate}
+        newEventEndDate={newEventEndDate}
+        newEventTime={newEventTime}
+        newEventEndTime={newEventEndTime}
+        newEventLocation={newEventLocation}
+        newEventIsAllDay={newEventIsAllDay}
+        onBack={() => setViewMode('home')}
+        onImportIcs={handleImportICS}
+        onOpenAddEvent={() => {
+          const now = new Date();
+          setNewEventDate(now.toISOString().split('T')[0]);
+          setShowAddEventModal(true);
+        }}
+        onSelectDate={setSelectedCalendarDate}
+        onPrevMonth={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() - 1, 1))}
+        onNextMonth={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() + 1, 1))}
+        onDeleteEvent={handleDeleteCalendarEvent}
+        onCloseAddEventModal={() => setShowAddEventModal(false)}
+        onSetNewEventTitle={setNewEventTitle}
+        onSetNewEventDate={setNewEventDate}
+        onSetNewEventEndDate={setNewEventEndDate}
+        onSetNewEventTime={setNewEventTime}
+        onSetNewEventEndTime={setNewEventEndTime}
+        onSetNewEventLocation={setNewEventLocation}
+        onSetNewEventIsAllDay={setNewEventIsAllDay}
+        onAddEvent={handleAddCalendarEvent}
+      />
     );
   }
 
@@ -5557,337 +4827,110 @@ export default function App() {
   }
 
   return (
-    <div
-      className="min-h-screen bg-cover bg-center bg-fixed"
-      style={{
-        backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.4), rgba(0,0,0,0.6)),
-                         url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80')`,
-      }}
-    >
-      {/* Header */}
-      <div className="bg-black/40 backdrop-blur-sm border-b border-white/10 px-4 py-2 sticky top-0 z-10">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleBackToDashboard}
-            className="flex items-center gap-2 text-white/70 hover:text-white transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            Home
-          </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-white">
-              {getGoalEmoji(activeGoal?.type || '')} {activeGoal?.goal}
-            </h1>
-            <button
-              onClick={rescanContent}
-              disabled={contentScanning}
-              className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full transition-all ${
-                contentScanning
-                  ? 'text-white/30 bg-white/5 cursor-not-allowed'
-                  : 'text-white/60 hover:text-white bg-white/5 hover:bg-white/10'
-              }`}
-              title={contentScanning ? `Scanning ${scannedCount}/${totalToScan}...` : 'Check for new seasons'}
-            >
-              <svg className={`w-3 h-3 ${contentScanning ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {contentScanning ? '' : 'Refresh'}
-            </button>
-          </div>
-          <button
-            onClick={() => handleDeleteGoal(activeGoalId!)}
-            className="p-2 text-white/50 hover:text-red-400 hover:bg-white/10 rounded transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      </div>
+    <TaskBoardView
+      activeGoal={activeGoal || null}
+      getGoalEmoji={getGoalEmoji}
+      contentScanning={contentScanning}
+      scannedCount={scannedCount}
+      totalToScan={totalToScan}
+      onBackToDashboard={handleBackToDashboard}
+      onRescanContent={rescanContent}
+      onDeleteGoal={() => handleDeleteGoal(activeGoalId!)}
+      boardScrollRef={boardScrollRef}
+      onBoardMouseDown={handleBoardMouseDown}
+      onBoardMouseMove={handleBoardMouseMove}
+      onBoardMouseUp={handleBoardMouseUp}
+      onBoardMouseLeave={handleBoardMouseLeave}
+      sensors={sensors}
+      activeColumnDragId={activeColumnDragId}
+      activeTaskDrag={activeTaskDrag ?? null}
+      onDragStart={(e) => {
+        const activeId = e.active.id as string;
+        const isDraggingColumn = activeId.startsWith('column-');
 
-      {/* Kanban-style board layout - click and drag to scroll horizontally */}
-      <div
-        ref={boardScrollRef}
-        className="p-3 overflow-x-auto h-[calc(100vh-60px)]"
-        onMouseDown={handleBoardMouseDown}
-        onMouseMove={handleBoardMouseMove}
-        onMouseUp={handleBoardMouseUp}
-        onMouseLeave={handleBoardMouseLeave}
-      >
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          autoScroll={
-            // Disable auto-scroll when dragging columns, enable for cards
-            activeColumnDragId
-              ? false
-              : {
-                  threshold: { x: 0.1, y: 0.1 },
-                  acceleration: 5,
-                }
+        // Only save scroll position for card drags (not column drags)
+        if (!isDraggingColumn) {
+          savedScrollPosition.current = boardScrollRef.current?.scrollLeft ?? null;
+        } else {
+          // Prevent scroll during column drag by locking scroll position
+          if (boardScrollRef.current) {
+            const scrollLeft = boardScrollRef.current.scrollLeft;
+            boardScrollRef.current.dataset.lockedScroll = String(scrollLeft);
           }
-          onDragStart={(e) => {
-            const activeId = e.active.id as string;
-            const isDraggingColumn = activeId.startsWith('column-');
+        }
 
-            // Only save scroll position for card drags (not column drags)
-            if (!isDraggingColumn) {
-              savedScrollPosition.current = boardScrollRef.current?.scrollLeft ?? null;
-            } else {
-              // Prevent scroll during column drag by locking scroll position
+        // Check if dragging a column or a card
+        if (isDraggingColumn) {
+          setActiveColumnDragId(activeId);
+          setActiveTaskDragId(null);
+        } else {
+          setActiveTaskDragId(activeId);
+          setActiveColumnDragId(null);
+        }
+      }}
+      onDragOver={(e) => {
+        // Only handle drag over for cards, not columns - check event directly
+        const activeId = e.active.id as string;
+        if (!activeId.startsWith('column-')) {
+          handleTaskDragOver(e);
+        }
+      }}
+      onDragEnd={(e) => {
+        const activeId = e.active.id as string;
+        const isDraggingColumn = activeId.startsWith('column-');
+
+        // Only save/restore scroll for card drags, not column drags
+        const scrollPos = !isDraggingColumn
+          ? (boardScrollRef.current?.scrollLeft ?? savedScrollPosition.current)
+          : null;
+
+        // Handle based on what we're dragging
+        if (isDraggingColumn) {
+          handleColumnDragEnd(e);
+          setActiveColumnDragId(null);
+        } else {
+          handleTaskDragEnd(e);
+          setActiveTaskDragId(null);
+
+          // Restore scroll position after React re-renders (only for card drags)
+          if (scrollPos !== null) {
+            requestAnimationFrame(() => {
               if (boardScrollRef.current) {
-                const scrollLeft = boardScrollRef.current.scrollLeft;
-                boardScrollRef.current.dataset.lockedScroll = String(scrollLeft);
+                boardScrollRef.current.scrollLeft = scrollPos;
               }
-            }
-
-            // Check if dragging a column or a card
-            if (isDraggingColumn) {
-              setActiveColumnDragId(activeId);
-              setActiveTaskDragId(null);
-            } else {
-              setActiveTaskDragId(activeId);
-              setActiveColumnDragId(null);
-            }
-          }}
-          onDragOver={(e) => {
-            // Only handle drag over for cards, not columns - check event directly
-            const activeId = e.active.id as string;
-            if (!activeId.startsWith('column-')) {
-              handleTaskDragOver(e);
-            }
-          }}
-          onDragEnd={(e) => {
-            const activeId = e.active.id as string;
-            const isDraggingColumn = activeId.startsWith('column-');
-
-            // Only save/restore scroll for card drags, not column drags
-            const scrollPos = !isDraggingColumn
-              ? (boardScrollRef.current?.scrollLeft ?? savedScrollPosition.current)
-              : null;
-
-            // Handle based on what we're dragging
-            if (isDraggingColumn) {
-              handleColumnDragEnd(e);
-              setActiveColumnDragId(null);
-            } else {
-              handleTaskDragEnd(e);
-              setActiveTaskDragId(null);
-
-              // Restore scroll position after React re-renders (only for card drags)
-              if (scrollPos !== null) {
-                requestAnimationFrame(() => {
-                  if (boardScrollRef.current) {
-                    boardScrollRef.current.scrollLeft = scrollPos;
-                  }
-                });
-              }
-            }
-          }}
-          onDragCancel={() => {
-            setActiveTaskDragId(null);
-            setActiveColumnDragId(null);
-            // Restore scroll position on cancel too
-            if (savedScrollPosition.current !== null && boardScrollRef.current) {
-              boardScrollRef.current.scrollLeft = savedScrollPosition.current;
-            }
-          }}
-        >
-          <div className="flex gap-3 items-start h-full">
-            {/* SortableContext for column reordering */}
-            <SortableContext
-              items={stableColumnOrder.map(c => `column-${c}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              {stableColumnOrder.map(category => {
-                const tasks = groupedTasks[category] || [];
-                // Get display name for category
-                const categoryDisplayNames: Record<string, string> = {
-                  'to_watch': 'To Watch',
-                  'watching': 'Watching',
-                  'watched': 'Watched',
-                  'dropped': 'Dropped',
-                  'on_hold': 'On Hold',
-                  'tasks': 'Tasks',
-                  'custom': 'Custom',
-                };
-                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-                return (
-                  <SortableTaskColumn
-                    key={category}
-                    category={category}
-                    displayName={displayName}
-                    tasks={tasks}
-                  >
-                  {/* Per-column SortableContext - only cards in THIS column shift */}
-                  <SortableContext
-                    items={tasks.map(t => t.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {tasks.map(task => {
-                      const infoMatch = getTaskInfoMatch(task);
-                      return (
-                        <SortableTaskCardWrapper
-                          key={task.id}
-                          task={task}
-                          onSelect={() => handleSelectTask(task.id)}
-                          infoMatch={infoMatch}
-                        />
-                      );
-                    })}
-                  </SortableContext>
-
-                  {/* Add task button/form for this category */}
-                  {addingTaskToCategory === category ? (
-                    <div className="pt-1">
-                      <input
-                        type="text"
-                        value={newTaskText}
-                        onChange={(e) => setNewTaskText(e.target.value)}
-                        placeholder="Enter task title..."
-                        autoFocus
-                        className="w-full bg-[#22272b] border border-[#5a6370] rounded-lg px-3 py-2 text-white text-sm
-                                 placeholder-white/40 focus:outline-none focus:border-accent mb-2"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newTaskText.trim()) {
-                            handleAddTask(newTaskText, category);
-                          }
-                          if (e.key === 'Escape') {
-                            setAddingTaskToCategory(null);
-                            setNewTaskText('');
-                          }
-                        }}
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            if (newTaskText.trim()) {
-                              handleAddTask(newTaskText, category);
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-[#579dff] hover:bg-[#4a8fe8] text-white text-xs font-medium rounded transition-all"
-                        >
-                          Add Task
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAddingTaskToCategory(null);
-                            setNewTaskText('');
-                          }}
-                          className="px-3 py-1.5 text-white/60 hover:text-white hover:bg-[#3d444d] text-xs rounded transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setAddingTaskToCategory(category);
-                        setNewTaskText('');
-                      }}
-                      className="w-full px-3 py-2 text-[#9fadbc] hover:text-white hover:bg-[#22272b] text-sm
-                               flex items-center gap-2 transition-all rounded-lg"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Add a task
-                    </button>
-                  )}
-                </SortableTaskColumn>
-              );
-            })}
-            </SortableContext>
-
-            {/* Add another list button */}
-            <button
-              onClick={() => {
-                setAddingTaskToCategory('new_list');
-                setNewTaskText('');
-              }}
-              className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
-                       rounded-xl text-white text-sm font-medium
-                       transition-all flex items-center gap-2 h-fit"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add another list
-            </button>
-            </div>
-
-          {/* Drag overlay - shows dragged card or column without affecting original */}
-          <DragOverlay
-            dropAnimation={{
-              duration: 200,
-              easing: 'ease',
-            }}
-          >
-            {activeTaskDrag ? (
-              <div className="rounded-lg shadow-lg px-3 py-2 bg-[#22272b] border-2 border-accent cursor-grabbing">
-                <span className="text-sm text-white">{activeTaskDrag.text}</span>
-              </div>
-            ) : activeColumnDragId ? (
-              // Column overlay
-              (() => {
-                const category = activeColumnDragId.replace('column-', '');
-                const categoryDisplayNames: Record<string, string> = {
-                  'to_watch': 'To Watch',
-                  'watching': 'Watching',
-                  'watched': 'Watched',
-                  'dropped': 'Dropped',
-                  'on_hold': 'On Hold',
-                  'tasks': 'Tasks',
-                  'custom': 'Custom',
-                };
-                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                const tasks = groupedTasks[category] || [];
-                return (
-                  <div className="w-[280px] bg-[#101204] rounded-xl shadow-2xl border-2 border-accent cursor-grabbing opacity-90">
-                    <div className="px-3 py-2.5 flex items-center justify-between">
-                      <h3 className="text-[#b6c2cf] text-sm font-semibold">{displayName}</h3>
-                      <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">{tasks.length}</span>
-                    </div>
-                    <div className="px-2 pb-2 space-y-2 max-h-[200px] overflow-hidden">
-                      {tasks.slice(0, 3).map(task => (
-                        <div key={task.id} className="rounded-lg px-3 py-2 bg-[#22272b]">
-                          <span className="text-sm text-white/80">{task.text}</span>
-                        </div>
-                      ))}
-                      {tasks.length > 3 && (
-                        <div className="text-xs text-white/50 text-center py-1">
-                          +{tasks.length - 3} more
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      </div>
-
-      {/* Task Detail Modal */}
-      {selectedTask && (
-        <TaskDetailModal
-          task={selectedTask}
-          onClose={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
-          onToggleTask={handleToggleTask}
-          onEditTask={handleEditTask}
-          onDeleteTask={handleDeleteTask}
-          onToggleChecklistItem={handleToggleChecklistItem}
-          onAddChecklistItem={handleAddChecklistItem}
-          formatCategoryName={formatCategoryName}
-          renderDescriptionWithLinks={renderDescriptionWithLinks}
-        />
-      )}
-    </div>
+            });
+          }
+        }
+      }}
+      onDragCancel={() => {
+        setActiveTaskDragId(null);
+        setActiveColumnDragId(null);
+        // Restore scroll position on cancel too
+        if (savedScrollPosition.current !== null && boardScrollRef.current) {
+          boardScrollRef.current.scrollLeft = savedScrollPosition.current;
+        }
+      }}
+      stableColumnOrder={stableColumnOrder}
+      groupedTasks={groupedTasks}
+      addingTaskToCategory={addingTaskToCategory}
+      newTaskText={newTaskText}
+      onSetAddingTaskToCategory={setAddingTaskToCategory}
+      onSetNewTaskText={setNewTaskText}
+      onAddTask={handleAddTask}
+      onSelectTask={handleSelectTask}
+      getTaskInfoMatch={getTaskInfoMatch}
+      selectedTask={selectedTask ?? null}
+      onCloseTaskDetail={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
+      onToggleTask={handleToggleTask}
+      onEditTask={handleEditTask}
+      onDeleteTask={handleDeleteTask}
+      onToggleChecklistItem={handleToggleChecklistItem}
+      onAddChecklistItem={handleAddChecklistItem}
+      formatCategoryName={formatCategoryName}
+      renderDescriptionWithLinks={renderDescriptionWithLinks}
+    />
   );
 }
+
 
 
