@@ -94,44 +94,44 @@ const defaultWorkspaces: Workspace[] = [];
 // Predefined profile templates
 const profileTemplates: ProfileField[] = [
   // Travel Documents
-  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: 'ðŸ›‚' },
-  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: 'ðŸ³ï¸' },
-  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: 'ðŸ‡ºðŸ‡¸' },
-  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: 'ðŸ‡ªðŸ‡º' },
-  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: 'ðŸ›¡ï¸' },
-  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: 'âœˆï¸' },
+  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: '🛂' },
+  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: '🏳️' },
+  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: '🇺🇸' },
+  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: '🇪🇺' },
+  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: '🛡️' },
+  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: '✈️' },
 
   // Identity Documents
-  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: 'ðŸš—' },
-  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: 'ðŸªª' },
-  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: 'ðŸ“œ' },
+  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: '🚗' },
+  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: '🪪' },
+  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: '📜' },
 
   // Health
-  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: 'ðŸ¥' },
-  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: 'ðŸ©¸' },
-  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: 'âš ï¸' },
-  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: 'ðŸ’‰' },
+  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: '🏥' },
+  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: '🩸' },
+  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: '⚠️' },
+  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: '💉' },
 
   // Skills & Tools
-  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: 'ðŸ' },
-  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: 'ðŸŸ¢' },
-  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: 'ðŸ’»' },
-  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: 'ðŸ“¦' },
+  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: '🐍' },
+  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: '🟢' },
+  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: '💻' },
+  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: '📦' },
 
   // Education & Certifications
-  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: 'ðŸŽ“' },
-  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: 'ðŸ“‹' },
-  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: 'ðŸ“‹' },
-  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: 'ðŸ—£ï¸' },
+  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: '🎓' },
+  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: '📋' },
+  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: '📋' },
+  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: '🗣️' },
 ];
 
 // Default profile categories
 const defaultProfileCategories: ProfileCategory[] = [
-  { id: 'travel', name: 'Travel Documents', icon: 'âœˆï¸' },
-  { id: 'identity', name: 'Identity Documents', icon: 'ðŸªª' },
-  { id: 'health', name: 'Health Information', icon: 'ðŸ¥' },
-  { id: 'skills', name: 'Skills & Tools', icon: 'ðŸ’»' },
-  { id: 'education', name: 'Education & Certifications', icon: 'ðŸŽ“' },
+  { id: 'travel', name: 'Travel Documents', icon: '✈️' },
+  { id: 'identity', name: 'Identity Documents', icon: '🪪' },
+  { id: 'health', name: 'Health Information', icon: '🏥' },
+  { id: 'skills', name: 'Skills & Tools', icon: '💻' },
+  { id: 'education', name: 'Education & Certifications', icon: '🎓' },
 ];
 
 // Keywords to match tasks with user info
@@ -1507,15 +1507,15 @@ interface _Board {
 
 // Category columns for Trello-style board
 const categoryColumns = [
-  { id: 'travel', title: 'Travel', emoji: 'âœˆï¸' },
-  { id: 'learning', title: 'Learning', emoji: 'ðŸ“š' },
-  { id: 'fitness', title: 'Fitness', emoji: 'ðŸ’ª' },
-  { id: 'cooking', title: 'Cooking', emoji: 'ðŸ³' },
-  { id: 'job', title: 'Career', emoji: 'ðŸ’¼' },
-  { id: 'event', title: 'Events', emoji: 'ðŸŽ‰' },
-  { id: 'project', title: 'Projects', emoji: 'ðŸš€' },
-  { id: 'moving', title: 'Moving', emoji: 'ðŸ“¦' },
-  { id: 'other', title: 'Other', emoji: 'ðŸ“‹' },
+  { id: 'travel', title: 'Travel', emoji: '✈️' },
+  { id: 'learning', title: 'Learning', emoji: '📚' },
+  { id: 'fitness', title: 'Fitness', emoji: '💪' },
+  { id: 'cooking', title: 'Cooking', emoji: '🍳' },
+  { id: 'job', title: 'Career', emoji: '💼' },
+  { id: 'event', title: 'Events', emoji: '🎉' },
+  { id: 'project', title: 'Projects', emoji: '🚀' },
+  { id: 'moving', title: 'Moving', emoji: '📦' },
+  { id: 'other', title: 'Other', emoji: '📋' },
 ];
 
 // Sortable Card Component
@@ -1793,13 +1793,13 @@ export default function App() {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showAddFieldModal, setShowAddFieldModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('ðŸ“');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [newFieldCategory, setNewFieldCategory] = useState('');
   const [newFieldHasExpiry, setNewFieldHasExpiry] = useState(false);
   const [newFieldHasDocument, setNewFieldHasDocument] = useState(false);
   const [newFieldPlaceholder, setNewFieldPlaceholder] = useState('');
-  const [newFieldIcon, setNewFieldIcon] = useState('ðŸ“');
+  const [newFieldIcon, setNewFieldIcon] = useState('📝');
 
   // Drag and drop state
   const [columnOrder, setColumnOrder] = useState<string[]>(categoryColumns.map(c => c.id));
@@ -2308,7 +2308,7 @@ export default function App() {
     };
     setCustomProfileCategories(prev => [...prev, newCategory]);
     setNewCategoryName('');
-    setNewCategoryIcon('ðŸ“');
+    setNewCategoryIcon('📁');
     setShowAddCategoryModal(false);
   };
 
@@ -2336,7 +2336,7 @@ export default function App() {
     setNewFieldHasExpiry(false);
     setNewFieldHasDocument(false);
     setNewFieldPlaceholder('');
-    setNewFieldIcon('ðŸ“');
+    setNewFieldIcon('📝');
     setShowAddFieldModal(false);
   };
 
@@ -3412,15 +3412,15 @@ export default function App() {
 
   const getGoalEmoji = (type: string) => {
     switch (type) {
-      case 'learning': return 'ðŸ“š';
-      case 'travel': return 'âœˆï¸';
-      case 'cooking': return 'ðŸ³';
-      case 'event': return 'ðŸŽ‰';
-      case 'job': return 'ðŸ’¼';
-      case 'fitness': return 'ðŸ’ª';
-      case 'moving': return 'ðŸ“¦';
-      case 'project': return 'ðŸš€';
-      default: return 'ðŸŽ¯';
+      case 'learning': return '📚';
+      case 'travel': return '✈️';
+      case 'cooking': return '🍳';
+      case 'event': return '🎉';
+      case 'job': return '💼';
+      case 'fitness': return '💪';
+      case 'moving': return '📦';
+      case 'project': return '🚀';
+      default: return '🎯';
     }
   };
 
@@ -4304,7 +4304,7 @@ export default function App() {
           onSelectCategory={setActiveProfileCategory}
           onOpenAddCategory={() => {
             setNewCategoryName('');
-            setNewCategoryIcon('ðŸ“');
+            setNewCategoryIcon('📁');
             setShowAddCategoryModal(true);
           }}
           onOpenAddField={(categoryId) => {
@@ -4313,7 +4313,7 @@ export default function App() {
             setNewFieldHasExpiry(false);
             setNewFieldHasDocument(true);
             setNewFieldPlaceholder('');
-            setNewFieldIcon('ðŸ“');
+            setNewFieldIcon('📝');
             setShowAddFieldModal(true);
           }}
           onDeleteProfileCategory={handleDeleteProfileCategory}
@@ -4361,7 +4361,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['ðŸ“', 'ðŸ’¼', 'ðŸ ', 'ðŸŽ¯', 'ðŸ“Š', 'ðŸ”§', 'ðŸ“±', 'ðŸŽ¨', 'ðŸƒ', 'ðŸ“š', 'ðŸ’°', 'ðŸŒ'].map(icon => (
+                    {['📁', '💼', '🏠', '🎯', '📊', '🔧', '📱', '🎨', '🃏', '📚', '💰', '🌐'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewCategoryIcon(icon)}
@@ -4445,7 +4445,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['ðŸ“', 'ðŸ“„', 'ðŸ”‘', 'ðŸ“§', 'ðŸ“ž', 'ðŸ·ï¸', 'ðŸ’³', 'ðŸŽ«', 'ðŸ“‹', 'ðŸ”—', 'âš™ï¸', 'ðŸ“Œ'].map(icon => (
+                    {['📝', '📄', '🔑', '🔧', '📞', '🏷️', '💳', '🎫', '📋', '🔗', '⚙️', '📌'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewFieldIcon(icon)}
@@ -4707,7 +4707,7 @@ export default function App() {
               </svg>
               Back to Board
             </button>
-            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Add New Goal</h1>
+            <h1 className="text-lg font-bold text-white">🎯 Add New Goal</h1>
             <div className="w-24"></div>
           </div>
         </div>
@@ -4787,7 +4787,7 @@ export default function App() {
               </svg>
               Cancel
             </button>
-            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Setting up your goal</h1>
+            <h1 className="text-lg font-bold text-white">🎯 Setting up your goal</h1>
             <span className="text-white/50 text-sm">
               {formState.currentQuestionIndex + 1}/{formState.questions.length}
             </span>
