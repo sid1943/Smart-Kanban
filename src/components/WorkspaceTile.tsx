@@ -182,8 +182,8 @@ export function WorkspaceTile({
         <div className="tile-content">
           {hasRecentActivity && <div className="tile-active-dot" />}
           <div className="tile-icon">{workspace.icon || workspace.name[0]}</div>
-          <div className="tile-number">{summary.totalTasks}</div>
-          {/* Progress bar */}
+          <div className="tile-number">{summary.totalTasks - summary.completedTasks}</div>
+          <div className="tile-label">remaining</div>
           <div className="tile-progress" style={{ width: '100%' }}>
             <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
           </div>
@@ -195,7 +195,7 @@ export function WorkspaceTile({
         <div className="tile-content">
           <div className="tile-completion">
             <div className="tile-completion-number">{completionPercentage}%</div>
-            <div className="tile-completion-label">done</div>
+            <div className="tile-completion-label">complete</div>
           </div>
         </div>
       </div>
@@ -211,7 +211,7 @@ export function WorkspaceTile({
           <div className="tile-header">
             <span className="tile-title">{workspace.name}</span>
             <span className="tile-stats">
-              {summary.boardCount} boards • {completionPercentage}%
+              {summary.boardCount} boards • {summary.completedTasks}/{summary.totalTasks} done • {completionPercentage}%
             </span>
             {latestUnfinishedTask && (
               <span className="tile-task-preview">
@@ -221,8 +221,8 @@ export function WorkspaceTile({
             )}
           </div>
           <div className="tile-right">
-            <div className="tile-number">{summary.totalTasks}</div>
-            <div className="tile-number-label">tasks</div>
+            <div className="tile-number">{summary.totalTasks - summary.completedTasks}</div>
+            <div className="tile-number-label">left</div>
           </div>
           <div className="tile-progress" style={{ width: '100%' }}>
             <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
@@ -230,19 +230,20 @@ export function WorkspaceTile({
         </div>
       </div>
 
-      {/* Back Face - Board previews */}
+      {/* Back Face - Stats */}
       <div className="tile-back" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content" style={{ flexDirection: 'column', justifyContent: 'center' }}>
-          <div className="tile-boards-preview">
-            {previewBoards.length > 0 ? (
-              previewBoards.map(board => (
-                <div key={board.id} className="tile-board-item">
-                  {board.goal}
-                </div>
-              ))
-            ) : (
-              <div className="tile-board-item" style={{ opacity: 0.7 }}>No boards</div>
-            )}
+        <div className="tile-content" style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: '24px' }}>
+          <div className="tile-stat-item">
+            <div className="tile-stat-value">{summary.boardCount}</div>
+            <div className="tile-stat-label">boards</div>
+          </div>
+          <div className="tile-stat-item">
+            <div className="tile-stat-value">{summary.completedTasks}</div>
+            <div className="tile-stat-label">done</div>
+          </div>
+          <div className="tile-stat-item">
+            <div className="tile-stat-value">{summary.totalTasks - summary.completedTasks}</div>
+            <div className="tile-stat-label">left</div>
           </div>
         </div>
       </div>
@@ -260,7 +261,7 @@ export function WorkspaceTile({
             <div className="tile-info">
               <span className="tile-title">{workspace.name}</span>
               <span className="tile-stats">
-                {summary.boardCount} boards • {summary.totalTasks} tasks • {completionPercentage}%
+                {summary.boardCount} boards • {summary.completedTasks}/{summary.totalTasks} tasks • {completionPercentage}% complete
               </span>
               {latestUnfinishedTask && (
                 <span className="tile-task-preview">
@@ -271,8 +272,10 @@ export function WorkspaceTile({
             </div>
           </div>
           <div className="tile-right">
-            <div className="tile-number">{summary.totalTasks}</div>
-            <div className="tile-number-label">left</div>
+            <div className="tile-stat-item">
+              <div className="tile-stat-value" style={{ fontSize: '24px' }}>{summary.totalTasks - summary.completedTasks}</div>
+              <div className="tile-stat-label">remaining</div>
+            </div>
           </div>
           <div className="tile-progress" style={{ width: '100%' }}>
             <div className="tile-progress-fill" style={{ width: `${completionPercentage}%` }} />
@@ -280,12 +283,22 @@ export function WorkspaceTile({
         </div>
       </div>
 
-      {/* Back Face */}
+      {/* Back Face - Stats + boards */}
       <div className="tile-back" style={{ backgroundColor: workspace.color }}>
-        <div className="tile-content" style={{ flexDirection: 'row', gap: '16px' }}>
-          <div className="tile-completion" style={{ flex: '0 0 auto' }}>
-            <div className="tile-completion-number">{completionPercentage}%</div>
-            <div className="tile-completion-label">complete</div>
+        <div className="tile-content" style={{ flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <div className="tile-stat-item">
+              <div className="tile-stat-value">{summary.boardCount}</div>
+              <div className="tile-stat-label">boards</div>
+            </div>
+            <div className="tile-stat-item">
+              <div className="tile-stat-value">{summary.completedTasks}</div>
+              <div className="tile-stat-label">done</div>
+            </div>
+            <div className="tile-stat-item">
+              <div className="tile-stat-value">{completionPercentage}%</div>
+              <div className="tile-stat-label">progress</div>
+            </div>
           </div>
           <div className="tile-boards-preview" style={{ flex: 1 }}>
             {previewBoards.length > 0 ? (

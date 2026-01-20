@@ -60,24 +60,21 @@
   grid-column: span 1;
   grid-row: span 1;
   aspect-ratio: 1 / 1;
-  min-height: 88px;
-  max-height: 100px;
+  min-height: 110px;
 }
 
 /* Medium Tile: 2x1 */
 .tile-medium {
   grid-column: span 2;
   grid-row: span 1;
-  min-height: 88px;
-  max-height: 100px;
+  min-height: 120px;
 }
 
 /* Wide Tile: 3x1 */
 .tile-wide {
   grid-column: span 3;
   grid-row: span 1;
-  min-height: 88px;
-  max-height: 100px;
+  min-height: 120px;
 }
 
 /* Responsive tile sizing */
@@ -169,9 +166,9 @@
   100% { left: 200%; }
 }
 
-/* Typography - Compact */
+/* Typography */
 .tile-title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.3px;
   line-height: 1.2;
@@ -182,7 +179,7 @@
 }
 
 .tile-number {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 300;
   line-height: 1;
   letter-spacing: -1px;
@@ -203,12 +200,12 @@
 }
 
 .tile-stats {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   opacity: 0.9;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: nowrap;
   white-space: nowrap;
   overflow: hidden;
@@ -241,13 +238,13 @@
 
 /* Task preview */
 .tile-task-preview {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   opacity: 0.9;
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 5px;
+  margin-top: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -255,9 +252,35 @@
 }
 
 .tile-task-checkbox {
-  font-size: 10px;
+  font-size: 11px;
   opacity: 0.8;
   flex-shrink: 0;
+}
+
+/* Stats row */
+.tile-stats-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.tile-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tile-stat-value {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.tile-stat-label {
+  font-size: 9px;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 /* Icon positioning */
@@ -287,20 +310,25 @@
 /* ============================================== */
 
 .tile-small .tile-content {
-  padding: 8px;
+  padding: 10px;
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .tile-small .tile-icon {
-  font-size: 16px;
+  font-size: 20px;
 }
 
 .tile-small .tile-number {
-  font-size: 22px;
-  font-weight: 400;
+  font-size: 28px;
+  font-weight: 300;
+}
+
+.tile-small .tile-label {
+  font-size: 10px;
+  opacity: 0.85;
 }
 
 .tile-small .tile-number-label {
@@ -316,10 +344,10 @@
 /* ============================================== */
 
 .tile-medium .tile-content {
-  padding: 10px 12px;
+  padding: 12px 14px;
   flex-direction: row;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 14px;
 }
 
 .tile-medium .tile-header {
@@ -327,14 +355,15 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  gap: 2px;
 }
 
 .tile-medium .tile-title {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .tile-medium .tile-stats {
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 2px;
 }
 
@@ -346,11 +375,11 @@
 }
 
 .tile-medium .tile-number {
-  font-size: 24px;
+  font-size: 28px;
 }
 
 .tile-medium .tile-number-label {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 /* ============================================== */
@@ -358,16 +387,16 @@
 /* ============================================== */
 
 .tile-wide .tile-content {
-  padding: 10px 14px;
+  padding: 14px 16px;
   flex-direction: row;
-  align-items: center;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 20px;
 }
 
 .tile-wide .tile-left {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
   flex: 1;
   min-width: 0;
 }
@@ -375,29 +404,32 @@
 .tile-wide .tile-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .tile-wide .tile-title {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .tile-wide .tile-stats {
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 2px;
 }
 
 .tile-wide .tile-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .tile-wide .tile-number {
-  font-size: 26px;
+  font-size: 32px;
 }
 
 .tile-wide .tile-activity {
-  max-width: 140px;
+  max-width: 160px;
 }
 
 /* ============================================== */
