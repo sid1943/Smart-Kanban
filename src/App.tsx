@@ -2,8 +2,9 @@
 import { useNewContentScanner } from './hooks/useNewContentScanner';
 import { enrichFromTMDb } from './engine/enrichment/tmdb';
 import { ContentType, UpcomingContent } from './engine/types';
-import { getContentKindLabel, isUpcoming, getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
+import { getNewContentOrchestrator, ChecklistInfo } from './engine/detection';
 import { getOrchestrator } from './engine/agents/AgentOrchestrator';
+import { parseICS, type CalendarEvent } from './features/calendarImport';
 import { parseTrelloExport } from './features/trelloImport';
 import { Attachment, Checklist, ChecklistItem, Comment, ExtractedLink, TaskItem, TaskLabel } from './types/tasks';
 import { ProfileCategory, ProfileField, ProfileFieldData } from './types/profile';
@@ -19,12 +20,13 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
-  useDroppable,
 } from '@dnd-kit/core';
 import { IdeasView } from './components/IdeasView';
-import TaskDetailModal from './components/TaskDetailModal';
 import ProfileView from './components/ProfileView';
-import { WorkspaceBlock } from './components/WorkspaceBlock';
+import CalendarView from './components/CalendarView';
+import TaskBoardView from './components/TaskBoardView';
+import { TileGrid, TileSize } from './components/TileGrid';
+import './styles/tiles.css';
 import { WorkspaceSelectModal } from './components/WorkspaceSelectModal';
 import {
   arrayMove,
@@ -49,116 +51,6 @@ interface UserInfoItem {
   documentType?: string; // MIME type
 }
 
-// Calendar event definition
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description?: string;
-  startDate: Date;
-  endDate: Date;
-  location?: string;
-  isAllDay: boolean;
-  source: 'imported' | 'manual';
-  sourceFile?: string;
-}
-
-// Parse ICS file content
-const parseICS = (content: string, sourceFile: string): CalendarEvent[] => {
-  const events: CalendarEvent[] = [];
-  const lines = content.split(/\r?\n/);
-
-  let currentEvent: Partial<CalendarEvent> | null = null;
-  let inEvent = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Handle line folding (lines starting with space/tab are continuations)
-    while (i + 1 < lines.length && (lines[i + 1].startsWith(' ') || lines[i + 1].startsWith('\t'))) {
-      line += lines[++i].substring(1);
-    }
-
-    if (line.startsWith('BEGIN:VEVENT')) {
-      inEvent = true;
-      currentEvent = {
-        id: `cal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        source: 'imported',
-        sourceFile,
-        isAllDay: false,
-      };
-    } else if (line.startsWith('END:VEVENT') && currentEvent) {
-      if (currentEvent.title && currentEvent.startDate) {
-        events.push(currentEvent as CalendarEvent);
-      }
-      currentEvent = null;
-      inEvent = false;
-    } else if (inEvent && currentEvent) {
-      const colonIndex = line.indexOf(':');
-      if (colonIndex > 0) {
-        const key = line.substring(0, colonIndex).split(';')[0];
-        const value = line.substring(colonIndex + 1);
-
-        switch (key) {
-          case 'SUMMARY':
-            currentEvent.title = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'DESCRIPTION':
-            currentEvent.description = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'LOCATION':
-            currentEvent.location = value.replace(/\\,/g, ',').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            break;
-          case 'DTSTART':
-            if (line.includes('VALUE=DATE:') || value.length === 8) {
-              currentEvent.isAllDay = true;
-              const year = parseInt(value.substring(0, 4));
-              const month = parseInt(value.substring(4, 6)) - 1;
-              const day = parseInt(value.substring(6, 8));
-              currentEvent.startDate = new Date(year, month, day);
-            } else {
-              const parsed = parseICSDateTime(value);
-              if (parsed) currentEvent.startDate = parsed;
-            }
-            break;
-          case 'DTEND':
-            if (line.includes('VALUE=DATE:') || value.length === 8) {
-              const year = parseInt(value.substring(0, 4));
-              const month = parseInt(value.substring(4, 6)) - 1;
-              const day = parseInt(value.substring(6, 8));
-              currentEvent.endDate = new Date(year, month, day);
-            } else {
-              const parsed = parseICSDateTime(value);
-              if (parsed) currentEvent.endDate = parsed;
-            }
-            break;
-        }
-      }
-    }
-  }
-
-  return events;
-};
-
-// Parse ICS datetime format (YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ)
-const parseICSDateTime = (value: string): Date | null => {
-  try {
-    const dateStr = value.replace('Z', '');
-    const year = parseInt(dateStr.substring(0, 4));
-    const month = parseInt(dateStr.substring(4, 6)) - 1;
-    const day = parseInt(dateStr.substring(6, 8));
-    const hour = dateStr.length >= 11 ? parseInt(dateStr.substring(9, 11)) : 0;
-    const minute = dateStr.length >= 13 ? parseInt(dateStr.substring(11, 13)) : 0;
-    const second = dateStr.length >= 15 ? parseInt(dateStr.substring(13, 15)) : 0;
-
-    if (value.endsWith('Z')) {
-      return new Date(Date.UTC(year, month, day, hour, minute, second));
-    }
-    return new Date(year, month, day, hour, minute, second);
-  } catch {
-    return null;
-  }
-};
-
 // Parse Trello JSON export
 interface TrelloImportResult {
   boardName: string;
@@ -182,6 +74,7 @@ interface Workspace {
   order?: number;                     // display order
   autoCategories?: ContentType[];     // content types that auto-assign to this workspace
   goalTypes?: string[];               // goal types that auto-assign to this workspace
+  tileSize?: TileSize;                // tile size preference for dashboard
 }
 
 // Workspace summary for dashboard display
@@ -201,44 +94,44 @@ const defaultWorkspaces: Workspace[] = [];
 // Predefined profile templates
 const profileTemplates: ProfileField[] = [
   // Travel Documents
-  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: 'ðŸ›‚' },
-  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: 'ðŸ³ï¸' },
-  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: 'ðŸ‡ºðŸ‡¸' },
-  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: 'ðŸ‡ªðŸ‡º' },
-  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: 'ðŸ›¡ï¸' },
-  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: 'âœˆï¸' },
+  { id: 'passport_number', label: 'Passport Number', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AB1234567', icon: '🛂' },
+  { id: 'passport_country', label: 'Passport Country', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., United States', icon: '🏳️' },
+  { id: 'visa_us', label: 'US Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., B1/B2', icon: '🇺🇸' },
+  { id: 'visa_schengen', label: 'Schengen Visa', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Tourist', icon: '🇪🇺' },
+  { id: 'travel_insurance', label: 'Travel Insurance', category: 'travel', hasExpiry: true, hasDocument: true, placeholder: 'e.g., World Nomads Policy', icon: '🛡️' },
+  { id: 'frequent_flyer', label: 'Frequent Flyer Number', category: 'travel', hasExpiry: false, hasDocument: false, placeholder: 'e.g., AA123456', icon: '✈️' },
 
   // Identity Documents
-  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: 'ðŸš—' },
-  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: 'ðŸªª' },
-  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: 'ðŸ“œ' },
+  { id: 'drivers_license', label: "Driver's License", category: 'identity', hasExpiry: true, hasDocument: true, placeholder: 'e.g., D1234567', icon: '🚗' },
+  { id: 'national_id', label: 'National ID / SSN', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'e.g., XXX-XX-XXXX', icon: '🪪' },
+  { id: 'birth_certificate', label: 'Birth Certificate', category: 'identity', hasExpiry: false, hasDocument: true, placeholder: 'Certificate number', icon: '📜' },
 
   // Health
-  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: 'ðŸ¥' },
-  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: 'ðŸ©¸' },
-  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: 'âš ï¸' },
-  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: 'ðŸ’‰' },
+  { id: 'health_insurance', label: 'Health Insurance', category: 'health', hasExpiry: true, hasDocument: true, placeholder: 'e.g., Policy number', icon: '🏥' },
+  { id: 'blood_type', label: 'Blood Type', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., O+', icon: '🩸' },
+  { id: 'allergies', label: 'Allergies', category: 'health', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Penicillin, Peanuts', icon: '⚠️' },
+  { id: 'vaccinations', label: 'Vaccination Record', category: 'health', hasExpiry: false, hasDocument: true, placeholder: 'e.g., COVID-19, Yellow Fever', icon: '💉' },
 
   // Skills & Tools
-  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: 'ðŸ' },
-  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: 'ðŸŸ¢' },
-  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: 'ðŸ’»' },
-  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: 'ðŸ“¦' },
+  { id: 'python_installed', label: 'Python Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 3.12.0', icon: '🐍' },
+  { id: 'node_installed', label: 'Node.js Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 20.10.0', icon: '🟢' },
+  { id: 'vscode_installed', label: 'VS Code Installed', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., Yes - v1.85', icon: '💻' },
+  { id: 'git_installed', label: 'Git Version', category: 'skills', hasExpiry: false, hasDocument: false, placeholder: 'e.g., 2.43.0', icon: '📦' },
 
   // Education & Certifications
-  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: 'ðŸŽ“' },
-  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: 'ðŸ“‹' },
-  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: 'ðŸ“‹' },
-  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: 'ðŸ—£ï¸' },
+  { id: 'degree', label: 'Highest Degree', category: 'education', hasExpiry: false, hasDocument: true, placeholder: "e.g., Bachelor's in CS", icon: '🎓' },
+  { id: 'certification_1', label: 'Certification 1', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., AWS Solutions Architect', icon: '📋' },
+  { id: 'certification_2', label: 'Certification 2', category: 'education', hasExpiry: true, hasDocument: true, placeholder: 'e.g., PMP', icon: '📋' },
+  { id: 'language_1', label: 'Language Proficiency', category: 'education', hasExpiry: false, hasDocument: true, placeholder: 'e.g., Spanish - B2', icon: '🗣️' },
 ];
 
 // Default profile categories
 const defaultProfileCategories: ProfileCategory[] = [
-  { id: 'travel', name: 'Travel Documents', icon: 'âœˆï¸' },
-  { id: 'identity', name: 'Identity Documents', icon: 'ðŸªª' },
-  { id: 'health', name: 'Health Information', icon: 'ðŸ¥' },
-  { id: 'skills', name: 'Skills & Tools', icon: 'ðŸ’»' },
-  { id: 'education', name: 'Education & Certifications', icon: 'ðŸŽ“' },
+  { id: 'travel', name: 'Travel Documents', icon: '✈️' },
+  { id: 'identity', name: 'Identity Documents', icon: '🪪' },
+  { id: 'health', name: 'Health Information', icon: '🏥' },
+  { id: 'skills', name: 'Skills & Tools', icon: '💻' },
+  { id: 'education', name: 'Education & Certifications', icon: '🎓' },
 ];
 
 // Keywords to match tasks with user info
@@ -1601,7 +1494,7 @@ function getBackgroundThumbnail(url: string): string {
   return scaleBackgroundUrl(url, 200);
 }
 
-type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal';
+type ViewMode = 'home' | 'dashboard' | 'input' | 'questions' | 'tasks' | 'profile' | 'calendar' | 'ideas' | 'goal' | 'workspace';
 
 // Board/Workspace types
 interface _Board {
@@ -1614,15 +1507,15 @@ interface _Board {
 
 // Category columns for Trello-style board
 const categoryColumns = [
-  { id: 'travel', title: 'Travel', emoji: 'âœˆï¸' },
-  { id: 'learning', title: 'Learning', emoji: 'ðŸ“š' },
-  { id: 'fitness', title: 'Fitness', emoji: 'ðŸ’ª' },
-  { id: 'cooking', title: 'Cooking', emoji: 'ðŸ³' },
-  { id: 'job', title: 'Career', emoji: 'ðŸ’¼' },
-  { id: 'event', title: 'Events', emoji: 'ðŸŽ‰' },
-  { id: 'project', title: 'Projects', emoji: 'ðŸš€' },
-  { id: 'moving', title: 'Moving', emoji: 'ðŸ“¦' },
-  { id: 'other', title: 'Other', emoji: 'ðŸ“‹' },
+  { id: 'travel', title: 'Travel', emoji: '✈️' },
+  { id: 'learning', title: 'Learning', emoji: '📚' },
+  { id: 'fitness', title: 'Fitness', emoji: '💪' },
+  { id: 'cooking', title: 'Cooking', emoji: '🍳' },
+  { id: 'job', title: 'Career', emoji: '💼' },
+  { id: 'event', title: 'Events', emoji: '🎉' },
+  { id: 'project', title: 'Projects', emoji: '🚀' },
+  { id: 'moving', title: 'Moving', emoji: '📦' },
+  { id: 'other', title: 'Other', emoji: '📋' },
 ];
 
 // Sortable Card Component
@@ -1793,351 +1686,6 @@ function SortableColumn({
   );
 }
 
-// Sortable Task Card Component for Kanban board
-function SortableTaskCard({
-  task,
-  onSelect,
-  getContentKindLabel,
-  isUpcoming,
-}: {
-  task: TaskItem;
-  onSelect: () => void;
-  getContentKindLabel: (kind: string) => string;
-  isUpcoming: (date?: string) => boolean;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease',
-    // Hide original when dragging - DragOverlay shows the visual
-    opacity: isDragging ? 0 : 1,
-    zIndex: isDragging ? 1000 : 1,
-    touchAction: 'none',
-  };
-
-  const colorMap: Record<string, string> = {
-    green: 'bg-green-600',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-    purple: 'bg-purple-500',
-    blue: 'bg-blue-500',
-    sky: 'bg-sky-500',
-    lime: 'bg-lime-500',
-    pink: 'bg-pink-500',
-    black: 'bg-gray-700',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`rounded-lg px-3 py-2 shadow-sm transition-all group
-        ${task.hasNewContent
-          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
-          : 'bg-[#22272b] hover:bg-[#2c323a]'
-        }
-        ${task.checked ? 'opacity-60' : ''}
-        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
-    >
-      {/* Drag handle at top */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-0 left-0 w-full h-5 cursor-grab active:cursor-grabbing"
-      />
-
-      <div onClick={onSelect} className="cursor-pointer relative">
-        {/* Labels */}
-        {task.labels && task.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {task.labels.map((label, idx) => (
-              <span
-                key={idx}
-                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
-              >
-                {label.name}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
-          {task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
-              {task.upcomingContent
-                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
-                : 'NEW'}
-            </span>
-          )}
-          {task.showStatus === 'ongoing' && !task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
-              Returning
-            </span>
-          )}
-          {task.showStatus === 'ended' && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
-              Ended
-            </span>
-          )}
-        </div>
-
-        {/* Upcoming content date */}
-        {task.upcomingContent && (
-          <div className="text-[10px] text-amber-400 mt-0.5">
-            {task.upcomingContent.title}
-            {task.upcomingContent.releaseDate && (
-              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-            )}
-          </div>
-        )}
-
-        {/* Checklist progress */}
-        {task.checklistTotal && task.checklistTotal > 0 && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              <span>{task.checklistChecked}/{task.checklistTotal}</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Sortable + Droppable Column for Task Board (can be dragged to reorder AND accepts card drops)
-function SortableTaskColumn({
-  category,
-  displayName,
-  tasks,
-  children,
-}: {
-  category: string;
-  displayName: string;
-  tasks: TaskItem[];
-  children: React.ReactNode;
-}) {
-  // Sortable for column reordering
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging: isColumnDragging,
-  } = useSortable({
-    id: `column-${category}`,
-    data: { type: 'column', category },
-  });
-
-  // Droppable for accepting cards
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: `column-${category}`,
-    data: { type: 'column', category },
-  });
-
-  // Combine refs
-  const setNodeRef = (node: HTMLDivElement | null) => {
-    setSortableRef(node);
-    setDroppableRef(node);
-  };
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isColumnDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`w-[280px] flex-shrink-0 bg-[#101204] rounded-xl flex flex-col max-h-full transition-all
-        ${isOver && !isColumnDragging ? 'ring-2 ring-accent/50 bg-[#1a1f26]' : ''}`}
-    >
-      {/* Column header - drag handle for column reordering */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="px-3 py-2.5 flex items-center justify-between cursor-grab active:cursor-grabbing"
-      >
-        <h3 className="text-[#b6c2cf] text-sm font-semibold">
-          {displayName}
-        </h3>
-        <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">
-          {tasks.length}
-        </span>
-      </div>
-
-      {/* Cards container */}
-      <div className="px-2 pb-2 space-y-2 overflow-y-auto flex-1 min-h-[100px]">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// Sortable wrapper for task cards with full rendering
-function SortableTaskCardWrapper({
-  task,
-  onSelect,
-  infoMatch,
-}: {
-  task: TaskItem;
-  onSelect: () => void;
-  infoMatch: { matched: boolean; info?: { label: string; value: string; expiryDate?: string }; profileMatch?: { label: string; value: string; expiry?: string }; status: 'done' | 'valid' | 'expired' | 'none' };
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease',
-    // Hide original when dragging - DragOverlay shows the visual
-    opacity: isDragging ? 0 : 1,
-    zIndex: isDragging ? 1000 : 1,
-    touchAction: 'none',
-  };
-
-  const colorMap: Record<string, string> = {
-    green: 'bg-green-600',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-    purple: 'bg-purple-500',
-    blue: 'bg-blue-500',
-    sky: 'bg-sky-500',
-    lime: 'bg-lime-500',
-    pink: 'bg-pink-500',
-    black: 'bg-gray-700',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      data-task-card="true"
-      {...attributes}
-      {...listeners}
-      onClick={(e) => {
-        if (!isDragging) {
-          e.stopPropagation();
-          onSelect();
-        }
-      }}
-      className={`rounded-lg shadow-sm transition-all relative cursor-grab active:cursor-grabbing px-3 py-2
-        ${task.hasNewContent
-          ? 'bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
-          : 'bg-[#22272b] hover:bg-[#2c323a]'
-        }
-        ${task.checked ? 'opacity-60' : ''}
-        ${isDragging ? 'shadow-lg ring-2 ring-accent/50' : ''}`}
-    >
-      <div className="flex-1 min-w-0">
-        {/* Labels */}
-        {task.labels && task.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {task.labels.map((label, idx) => (
-              <span
-                key={idx}
-                className={`px-1.5 py-0.5 text-[10px] rounded font-medium text-white ${colorMap[label.color] || 'bg-gray-500'}`}
-              >
-                {label.name}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-sm ${task.checked ? 'line-through' : ''}`}>{task.text}</span>
-          {task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500 text-black font-bold rounded animate-pulse">
-              {task.upcomingContent
-                ? (isUpcoming(task.upcomingContent.releaseDate) ? 'UPCOMING' : getContentKindLabel(task.upcomingContent.contentKind))
-                : 'NEW'}
-            </span>
-          )}
-          {task.showStatus === 'ongoing' && !task.hasNewContent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded">
-              Returning
-            </span>
-          )}
-          {task.showStatus === 'ended' && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/30 text-gray-400 rounded">
-              Ended
-            </span>
-          )}
-        </div>
-        {/* Upcoming content date */}
-        {task.upcomingContent && (
-          <div className="text-[10px] text-amber-400 mt-0.5">
-            {task.upcomingContent.title}
-            {task.upcomingContent.releaseDate && (
-              <> â€¢ {new Date(task.upcomingContent.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-            )}
-          </div>
-        )}
-        {/* Checklist progress */}
-        {task.checklistTotal && task.checklistTotal > 0 && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <div className={`flex items-center gap-1 text-xs ${task.checklistChecked === task.checklistTotal ? 'text-green-400' : 'text-[#9fadbc]'}`}>
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              {task.checklistChecked}/{task.checklistTotal}
-            </div>
-          </div>
-        )}
-        {infoMatch.matched && (infoMatch.info || infoMatch.profileMatch) && !task.checked && (
-          <div className="flex items-center gap-1.5 mt-1">
-            {infoMatch.status === 'valid' && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Valid until {new Date(infoMatch.profileMatch?.expiry || infoMatch.info?.expiryDate || '').toLocaleDateString()}
-              </span>
-            )}
-            {infoMatch.status === 'done' && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                {infoMatch.profileMatch?.label || infoMatch.info?.label}: {infoMatch.profileMatch?.value || infoMatch.info?.value}
-              </span>
-            )}
-            {infoMatch.status === 'expired' && (
-              <span className="text-xs text-red-400 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                Expired - needs renewal!
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   // Track whether initial load from localStorage has completed
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -2223,7 +1771,19 @@ export default function App() {
   const [newWorkspaceImage, setNewWorkspaceImage] = useState('');
 
   // Dynamic Workspace Blocks state
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
+  const [tileSizes, setTileSizes] = useState<Map<string, TileSize>>(() => {
+    const saved = localStorage.getItem('workspace-tile-sizes');
+    if (saved) {
+      try {
+        return new Map(JSON.parse(saved));
+      } catch {
+        return new Map();
+      }
+    }
+    return new Map();
+  });
   const [showWorkspaceSelectModal, setShowWorkspaceSelectModal] = useState(false);
   const [pendingBoardForWorkspace, setPendingBoardForWorkspace] = useState<StoredGoal | null>(null);
   const [suggestedWorkspaceId, setSuggestedWorkspaceId] = useState<string | null>(null);
@@ -2234,13 +1794,13 @@ export default function App() {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showAddFieldModal, setShowAddFieldModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('ðŸ“');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [newFieldCategory, setNewFieldCategory] = useState('');
   const [newFieldHasExpiry, setNewFieldHasExpiry] = useState(false);
   const [newFieldHasDocument, setNewFieldHasDocument] = useState(false);
   const [newFieldPlaceholder, setNewFieldPlaceholder] = useState('');
-  const [newFieldIcon, setNewFieldIcon] = useState('ðŸ“');
+  const [newFieldIcon, setNewFieldIcon] = useState('📝');
 
   // Drag and drop state
   const [columnOrder, setColumnOrder] = useState<string[]>(categoryColumns.map(c => c.id));
@@ -2749,7 +2309,7 @@ export default function App() {
     };
     setCustomProfileCategories(prev => [...prev, newCategory]);
     setNewCategoryName('');
-    setNewCategoryIcon('ðŸ“');
+    setNewCategoryIcon('📁');
     setShowAddCategoryModal(false);
   };
 
@@ -2777,7 +2337,7 @@ export default function App() {
     setNewFieldHasExpiry(false);
     setNewFieldHasDocument(false);
     setNewFieldPlaceholder('');
-    setNewFieldIcon('ðŸ“');
+    setNewFieldIcon('📝');
     setShowAddFieldModal(false);
   };
 
@@ -3626,6 +3186,87 @@ export default function App() {
     }));
   };
 
+  // Rename a list/column
+  const handleRenameList = (category: string, newName: string) => {
+    if (!activeGoalId || !newName.trim()) return;
+
+    // Convert new name to a category-safe format (lowercase, underscores)
+    const newCategory = newName.trim().toLowerCase().replace(/\s+/g, '_');
+
+    // Don't rename if it's the same
+    if (newCategory === category) return;
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Update column order
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+        const newOrder = currentOrder.map(col => col === category ? newCategory : col);
+
+        // Update all tasks in this category
+        const updatedTasks = goal.tasks.map(task =>
+          task.category === category ? { ...task, category: newCategory } : task
+        );
+
+        return {
+          ...goal,
+          columnOrder: newOrder,
+          tasks: updatedTasks,
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
+  // Delete a list/column (removes all tasks in it)
+  const handleDeleteList = (category: string) => {
+    if (!activeGoalId) return;
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Remove from column order
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+        const newOrder = currentOrder.filter(col => col !== category);
+
+        // Remove all tasks in this category
+        const updatedTasks = goal.tasks.filter(task => task.category !== category);
+
+        return {
+          ...goal,
+          columnOrder: newOrder,
+          tasks: updatedTasks,
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
+  // Add a new list/column
+  const handleAddList = (name: string) => {
+    if (!activeGoalId || !name.trim()) return;
+
+    // Convert name to a category-safe format
+    const category = name.trim().toLowerCase().replace(/\s+/g, '_');
+
+    setGoals(prev => prev.map(goal => {
+      if (goal.id === activeGoalId) {
+        // Get current column order and add new column at the end
+        const currentOrder = goal.columnOrder || stableColumnOrder;
+
+        // Don't add if already exists
+        if (currentOrder.includes(category)) return goal;
+
+        return {
+          ...goal,
+          columnOrder: [...currentOrder, category],
+          lastActivityAt: Date.now(),
+        };
+      }
+      return goal;
+    }));
+  };
+
   // Add a new task manually
   const handleAddTask = (text: string, category?: string) => {
     if (!activeGoalId || !text.trim()) return;
@@ -3853,15 +3494,15 @@ export default function App() {
 
   const getGoalEmoji = (type: string) => {
     switch (type) {
-      case 'learning': return 'ðŸ“š';
-      case 'travel': return 'âœˆï¸';
-      case 'cooking': return 'ðŸ³';
-      case 'event': return 'ðŸŽ‰';
-      case 'job': return 'ðŸ’¼';
-      case 'fitness': return 'ðŸ’ª';
-      case 'moving': return 'ðŸ“¦';
-      case 'project': return 'ðŸš€';
-      default: return 'ðŸŽ¯';
+      case 'learning': return '📚';
+      case 'travel': return '✈️';
+      case 'cooking': return '🍳';
+      case 'event': return '🎉';
+      case 'job': return '💼';
+      case 'fitness': return '💪';
+      case 'moving': return '📦';
+      case 'project': return '🚀';
+      default: return '🎯';
     }
   };
 
@@ -3899,15 +3540,18 @@ export default function App() {
     }).sort((a, b) => (b.lastActivityAt || b.createdAt) - (a.lastActivityAt || a.createdAt));
   }, [goals, autoDetectWorkspace]);
 
-  // Toggle workspace expansion
-  const toggleWorkspaceExpansion = useCallback((workspaceId: string) => {
-    setExpandedWorkspaces(prev => {
-      const next = new Set(prev);
-      if (next.has(workspaceId)) {
-        next.delete(workspaceId);
-      } else {
-        next.add(workspaceId);
-      }
+  // Navigate to workspace view
+  const navigateToWorkspace = useCallback((workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId);
+    setViewMode('workspace');
+  }, []);
+
+  // Handle tile size change with persistence
+  const handleTileSizeChange = useCallback((workspaceId: string, size: TileSize) => {
+    setTileSizes(prev => {
+      const next = new Map(prev);
+      next.set(workspaceId, size);
+      localStorage.setItem('workspace-tile-sizes', JSON.stringify(Array.from(next.entries())));
       return next;
     });
   }, []);
@@ -4094,34 +3738,15 @@ export default function App() {
               </button>
             </div>
 
-            {/* Workspace Blocks Grid */}
+            {/* Workspace Tiles Grid */}
             {workspaces.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[...workspaces].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(workspace => {
-                  const workspaceBoards = getBoardsForWorkspace(workspace.id);
-
-                  return (
-                    <WorkspaceBlock
-                      key={workspace.id}
-                      workspace={workspace}
-                      boards={workspaceBoards}
-                      isExpanded={expandedWorkspaces.has(workspace.id)}
-                      onToggleExpand={() => toggleWorkspaceExpansion(workspace.id)}
-                      onSelectBoard={(boardId) => {
-                        const goal = goals.find(g => g.id === boardId);
-                        if (goal) {
-                          setActiveGoalId(boardId);
-                          setViewMode('goal');
-                          if (goal.backgroundImage) {
-                            setSelectedBackground(goal.backgroundImage);
-                          }
-                        }
-                      }}
-                      onAddBoard={handleStartNewGoal}
-                    />
-                  );
-                })}
-              </div>
+              <TileGrid
+                workspaces={workspaces}
+                getBoardsForWorkspace={getBoardsForWorkspace}
+                tileSizes={tileSizes}
+                onSelectWorkspace={navigateToWorkspace}
+                onTileSizeChange={handleTileSizeChange}
+              />
             ) : (
               /* Empty state when no workspaces */
               <div className="text-center py-12 bg-[#22272b] rounded-xl border border-[#3d444d]/50">
@@ -4676,343 +4301,209 @@ export default function App() {
     );
   }
 
+  // Workspace view - shows all boards in a workspace
+  if (viewMode === 'workspace' && selectedWorkspaceId) {
+    const selectedWorkspace = workspaces.find(w => w.id === selectedWorkspaceId);
+    const workspaceBoards = getBoardsForWorkspace(selectedWorkspaceId);
+
+    if (!selectedWorkspace) {
+      setViewMode('home');
+      return null;
+    }
+
+    return (
+      <div className="min-h-screen bg-[#1d2125]">
+        {/* Header */}
+        <div
+          className="border-b border-[#3d444d]/50 px-6 py-4 sticky top-0 z-10"
+          style={{ backgroundColor: selectedWorkspace.color }}
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  setSelectedWorkspaceId(null);
+                  setViewMode('home');
+                }}
+                className="p-2 text-white/70 hover:text-white hover:bg-white/20 rounded transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-3">
+                {selectedWorkspace.icon && (
+                  <span className="text-3xl">{selectedWorkspace.icon}</span>
+                )}
+                <div>
+                  <h1 className="text-xl font-bold text-white">{selectedWorkspace.name}</h1>
+                  <p className="text-white/70 text-sm">
+                    {workspaceBoards.length} board{workspaceBoards.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleStartNewGoal}
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Board
+            </button>
+          </div>
+        </div>
+
+        {/* Boards Grid */}
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          {workspaceBoards.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {workspaceBoards.map(board => {
+                const completedTasks = board.tasks.filter(t => t.checked).length;
+                const totalTasks = board.tasks.length;
+                const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+                return (
+                  <div
+                    key={board.id}
+                    onClick={() => {
+                      setActiveGoalId(board.id);
+                      setViewMode('tasks');
+                      if (board.backgroundImage) {
+                        setSelectedBackground(board.backgroundImage);
+                      }
+                    }}
+                    className="bg-[#22272b] hover:bg-[#282e33] rounded-lg overflow-hidden cursor-pointer transition-all group border border-[#3d444d]/50 hover:border-[#579dff]/50"
+                  >
+                    {/* Board thumbnail/header */}
+                    <div
+                      className="h-24 relative"
+                      style={{
+                        backgroundColor: selectedWorkspace.color,
+                        backgroundImage: board.backgroundImage ? `url(${board.backgroundImage})` : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all" />
+                    </div>
+
+                    {/* Board info */}
+                    <div className="p-4">
+                      <h3 className="text-white font-semibold mb-2 line-clamp-2">{board.goal}</h3>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-[#9fadbc]">
+                          {completedTasks}/{totalTasks} tasks
+                        </span>
+                        <span className="text-[#9fadbc]">{progress}%</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="mt-2 h-1.5 bg-[#3d444d] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${progress}%`,
+                            backgroundColor: selectedWorkspace.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Add board card */}
+              <div
+                onClick={handleStartNewGoal}
+                className="bg-[#22272b]/50 hover:bg-[#22272b] rounded-lg border-2 border-dashed border-[#3d444d]/50 hover:border-[#579dff] min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group"
+              >
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition-colors"
+                  style={{ backgroundColor: selectedWorkspace.color + '30' }}
+                >
+                  <svg className="w-6 h-6 text-[#9fadbc] group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <span className="text-[#9fadbc] group-hover:text-white transition-colors">Create new board</span>
+              </div>
+            </div>
+          ) : (
+            /* Empty state */
+            <div className="text-center py-16">
+              <div
+                className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: selectedWorkspace.color + '20' }}
+              >
+                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke={selectedWorkspace.color}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <h3 className="text-white text-xl font-semibold mb-2">No boards yet</h3>
+              <p className="text-[#9fadbc] mb-6">Create your first board in this workspace</p>
+              <button
+                onClick={handleStartNewGoal}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-medium transition-all"
+                style={{ backgroundColor: selectedWorkspace.color }}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Board
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Calendar view
   if (viewMode === 'calendar') {
     const calendarDays = getCalendarDays(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth());
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const selectedDateEvents = getEventsForDate(selectedCalendarDate);
 
     return (
-      <div className="min-h-screen bg-[#1d2125]">
-        {/* Header */}
-        <div className="bg-[#1d2125] border-b border-[#3d444d] px-4 py-3 sticky top-0 z-10">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => setViewMode('home')}
-              className="flex items-center gap-2 text-[#9fadbc] hover:text-white transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
-            <h1 className="text-xl font-bold text-white">Calendar</h1>
-            <div className="flex items-center gap-2">
-              <label className="px-4 py-2 bg-[#3d444d] hover:bg-[#4d545d] text-white font-medium
-                             rounded transition-all text-sm flex items-center gap-2 cursor-pointer">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Import .ics
-                <input
-                  type="file"
-                  accept=".ics"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImportICS(file);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-              <button
-                onClick={() => {
-                  const today = new Date();
-                  setNewEventDate(today.toISOString().split('T')[0]);
-                  setShowAddEventModal(true);
-                }}
-                className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white font-medium
-                         rounded transition-all text-sm flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Event
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Calendar Grid */}
-            <div className="lg:col-span-2 bg-[#22272b] rounded-xl p-4 border border-[#3d444d]">
-              {/* Month Navigation */}
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() - 1, 1))}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <h2 className="text-white font-semibold text-lg">
-                  {monthNames[selectedCalendarDate.getMonth()]} {selectedCalendarDate.getFullYear()}
-                </h2>
-                <button
-                  onClick={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() + 1, 1))}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Day Headers */}
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {dayNames.map(day => (
-                  <div key={day} className="text-center text-[#9fadbc] text-xs font-medium py-2">
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              {/* Calendar Days */}
-              <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map((day, idx) => {
-                  const dayEvents = getEventsForDate(day.date);
-                  const isToday = day.date.getTime() === today.getTime();
-                  const isSelected = day.date.toDateString() === selectedCalendarDate.toDateString();
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedCalendarDate(day.date)}
-                      className={`aspect-square p-1 rounded-lg transition-all relative
-                                ${day.isCurrentMonth ? 'text-white' : 'text-[#9fadbc]/50'}
-                                ${isSelected ? 'bg-[#579dff]' : isToday ? 'bg-[#3d444d]' : 'hover:bg-[#3d444d]'}`}
-                    >
-                      <span className="text-sm">{day.date.getDate()}</span>
-                      {dayEvents.length > 0 && (
-                        <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 flex gap-0.5">
-                          {dayEvents.slice(0, 3).map((_, i) => (
-                            <div key={i} className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-[#579dff]'}`} />
-                          ))}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Events List */}
-            <div className="bg-[#22272b] rounded-xl p-4 border border-[#3d444d]">
-              <h3 className="text-white font-semibold mb-4">
-                {selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </h3>
-
-              {selectedDateEvents.length === 0 ? (
-                <p className="text-[#9fadbc] text-sm">No events for this day</p>
-              ) : (
-                <div className="space-y-3">
-                  {selectedDateEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className="bg-[#1a1f26] rounded-lg p-3 border border-[#3d444d]"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="text-white font-medium text-sm">{event.title}</h4>
-                          {!event.isAllDay && (
-                            <p className="text-[#9fadbc] text-xs mt-1">
-                              {event.startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                              {event.endDate && ` - ${event.endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-                            </p>
-                          )}
-                          {event.isAllDay && (
-                            <p className="text-[#9fadbc] text-xs mt-1">All day</p>
-                          )}
-                          {event.location && (
-                            <p className="text-[#9fadbc] text-xs mt-1 flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              {event.location}
-                            </p>
-                          )}
-                          {event.source === 'imported' && event.sourceFile && (
-                            <p className="text-[#9fadbc]/60 text-xs mt-1">Imported from {event.sourceFile}</p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleDeleteCalendarEvent(event.id)}
-                          className="p-1 text-[#9fadbc] hover:text-red-400 hover:bg-[#3d444d] rounded transition-all"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Upcoming Events */}
-              {calendarEvents.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-[#3d444d]">
-                  <h4 className="text-[#9fadbc] text-xs font-semibold uppercase tracking-wider mb-3">Upcoming Events</h4>
-                  <div className="space-y-2">
-                    {calendarEvents
-                      .filter(e => new Date(e.startDate) >= today)
-                      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                      .slice(0, 5)
-                      .map(event => (
-                        <div
-                          key={event.id}
-                          onClick={() => setSelectedCalendarDate(new Date(event.startDate))}
-                          className="text-sm text-[#9fadbc] hover:text-white cursor-pointer transition-all"
-                        >
-                          <span className="text-[#579dff] text-xs mr-2">
-                            {new Date(event.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                          {event.title}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Add Event Modal */}
-        {showAddEventModal && (
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-16 px-4"
-            onClick={() => setShowAddEventModal(false)}
-          >
-            <div
-              className="bg-[#1a1f26] rounded-xl w-full max-w-md shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-6 py-4 border-b border-[#3d444d] flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Add Event</h2>
-                <button
-                  onClick={() => setShowAddEventModal(false)}
-                  className="p-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="text-[#9fadbc] text-sm mb-2 block">Title</label>
-                  <input
-                    type="text"
-                    value={newEventTitle}
-                    onChange={(e) => setNewEventTitle(e.target.value)}
-                    placeholder="Event title"
-                    className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                             focus:outline-none focus:border-[#579dff] text-sm"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="allDay"
-                    checked={newEventIsAllDay}
-                    onChange={(e) => setNewEventIsAllDay(e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#22272b] border-[#3d444d]"
-                  />
-                  <label htmlFor="allDay" className="text-[#9fadbc] text-sm">All day event</label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[#9fadbc] text-sm mb-2 block">Start Date</label>
-                    <input
-                      type="date"
-                      value={newEventDate}
-                      onChange={(e) => setNewEventDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                               focus:outline-none focus:border-[#579dff] text-sm"
-                    />
-                  </div>
-                  {!newEventIsAllDay && (
-                    <div>
-                      <label className="text-[#9fadbc] text-sm mb-2 block">Start Time</label>
-                      <input
-                        type="time"
-                        value={newEventTime}
-                        onChange={(e) => setNewEventTime(e.target.value)}
-                        className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                                 focus:outline-none focus:border-[#579dff] text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[#9fadbc] text-sm mb-2 block">End Date</label>
-                    <input
-                      type="date"
-                      value={newEventEndDate}
-                      onChange={(e) => setNewEventEndDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                               focus:outline-none focus:border-[#579dff] text-sm"
-                    />
-                  </div>
-                  {!newEventIsAllDay && (
-                    <div>
-                      <label className="text-[#9fadbc] text-sm mb-2 block">End Time</label>
-                      <input
-                        type="time"
-                        value={newEventEndTime}
-                        onChange={(e) => setNewEventEndTime(e.target.value)}
-                        className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                                 focus:outline-none focus:border-[#579dff] text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-[#9fadbc] text-sm mb-2 block">Location (optional)</label>
-                  <input
-                    type="text"
-                    value={newEventLocation}
-                    onChange={(e) => setNewEventLocation(e.target.value)}
-                    placeholder="Event location"
-                    className="w-full px-3 py-2 bg-[#22272b] border border-[#3d444d] rounded text-white
-                             focus:outline-none focus:border-[#579dff] text-sm"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <button
-                    onClick={() => setShowAddEventModal(false)}
-                    className="px-4 py-2 text-[#9fadbc] hover:text-white hover:bg-[#3d444d] rounded text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddCalendarEvent}
-                    disabled={!newEventTitle.trim() || !newEventDate}
-                    className="px-4 py-2 bg-[#579dff] hover:bg-[#4a8fe8] text-white rounded text-sm
-                             disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add Event
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <CalendarView
+        selectedCalendarDate={selectedCalendarDate}
+        calendarDays={calendarDays}
+        selectedDateEvents={selectedDateEvents}
+        calendarEvents={calendarEvents}
+        getEventsForDate={getEventsForDate}
+        today={today}
+        showAddEventModal={showAddEventModal}
+        newEventTitle={newEventTitle}
+        newEventDate={newEventDate}
+        newEventEndDate={newEventEndDate}
+        newEventTime={newEventTime}
+        newEventEndTime={newEventEndTime}
+        newEventLocation={newEventLocation}
+        newEventIsAllDay={newEventIsAllDay}
+        onBack={() => setViewMode('home')}
+        onImportIcs={handleImportICS}
+        onOpenAddEvent={() => {
+          const now = new Date();
+          setNewEventDate(now.toISOString().split('T')[0]);
+          setShowAddEventModal(true);
+        }}
+        onSelectDate={setSelectedCalendarDate}
+        onPrevMonth={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() - 1, 1))}
+        onNextMonth={() => setSelectedCalendarDate(new Date(selectedCalendarDate.getFullYear(), selectedCalendarDate.getMonth() + 1, 1))}
+        onDeleteEvent={handleDeleteCalendarEvent}
+        onCloseAddEventModal={() => setShowAddEventModal(false)}
+        onSetNewEventTitle={setNewEventTitle}
+        onSetNewEventDate={setNewEventDate}
+        onSetNewEventEndDate={setNewEventEndDate}
+        onSetNewEventTime={setNewEventTime}
+        onSetNewEventEndTime={setNewEventEndTime}
+        onSetNewEventLocation={setNewEventLocation}
+        onSetNewEventIsAllDay={setNewEventIsAllDay}
+        onAddEvent={handleAddCalendarEvent}
+      />
     );
   }
 
@@ -5034,7 +4525,7 @@ export default function App() {
           onSelectCategory={setActiveProfileCategory}
           onOpenAddCategory={() => {
             setNewCategoryName('');
-            setNewCategoryIcon('ðŸ“');
+            setNewCategoryIcon('📁');
             setShowAddCategoryModal(true);
           }}
           onOpenAddField={(categoryId) => {
@@ -5043,7 +4534,7 @@ export default function App() {
             setNewFieldHasExpiry(false);
             setNewFieldHasDocument(true);
             setNewFieldPlaceholder('');
-            setNewFieldIcon('ðŸ“');
+            setNewFieldIcon('📝');
             setShowAddFieldModal(true);
           }}
           onDeleteProfileCategory={handleDeleteProfileCategory}
@@ -5091,7 +4582,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['ðŸ“', 'ðŸ’¼', 'ðŸ ', 'ðŸŽ¯', 'ðŸ“Š', 'ðŸ”§', 'ðŸ“±', 'ðŸŽ¨', 'ðŸƒ', 'ðŸ“š', 'ðŸ’°', 'ðŸŒ'].map(icon => (
+                    {['📁', '💼', '🏠', '🎯', '📊', '🔧', '📱', '🎨', '🃏', '📚', '💰', '🌐'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewCategoryIcon(icon)}
@@ -5175,7 +4666,7 @@ export default function App() {
                 <div>
                   <label className="text-[#9fadbc] text-sm mb-2 block">Icon</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['ðŸ“', 'ðŸ“„', 'ðŸ”‘', 'ðŸ“§', 'ðŸ“ž', 'ðŸ·ï¸', 'ðŸ’³', 'ðŸŽ«', 'ðŸ“‹', 'ðŸ”—', 'âš™ï¸', 'ðŸ“Œ'].map(icon => (
+                    {['📝', '📄', '🔑', '🔧', '📞', '🏷️', '💳', '🎫', '📋', '🔗', '⚙️', '📌'].map(icon => (
                       <button
                         key={icon}
                         onClick={() => setNewFieldIcon(icon)}
@@ -5437,7 +4928,7 @@ export default function App() {
               </svg>
               Back to Board
             </button>
-            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Add New Goal</h1>
+            <h1 className="text-lg font-bold text-white">🎯 Add New Goal</h1>
             <div className="w-24"></div>
           </div>
         </div>
@@ -5517,7 +5008,7 @@ export default function App() {
               </svg>
               Cancel
             </button>
-            <h1 className="text-lg font-bold text-white">ðŸŽ¯ Setting up your goal</h1>
+            <h1 className="text-lg font-bold text-white">🎯 Setting up your goal</h1>
             <span className="text-white/50 text-sm">
               {formState.currentQuestionIndex + 1}/{formState.questions.length}
             </span>
@@ -5557,337 +5048,113 @@ export default function App() {
   }
 
   return (
-    <div
-      className="min-h-screen bg-cover bg-center bg-fixed"
-      style={{
-        backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.4), rgba(0,0,0,0.6)),
-                         url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80')`,
-      }}
-    >
-      {/* Header */}
-      <div className="bg-black/40 backdrop-blur-sm border-b border-white/10 px-4 py-2 sticky top-0 z-10">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleBackToDashboard}
-            className="flex items-center gap-2 text-white/70 hover:text-white transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            Home
-          </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-white">
-              {getGoalEmoji(activeGoal?.type || '')} {activeGoal?.goal}
-            </h1>
-            <button
-              onClick={rescanContent}
-              disabled={contentScanning}
-              className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full transition-all ${
-                contentScanning
-                  ? 'text-white/30 bg-white/5 cursor-not-allowed'
-                  : 'text-white/60 hover:text-white bg-white/5 hover:bg-white/10'
-              }`}
-              title={contentScanning ? `Scanning ${scannedCount}/${totalToScan}...` : 'Check for new seasons'}
-            >
-              <svg className={`w-3 h-3 ${contentScanning ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {contentScanning ? '' : 'Refresh'}
-            </button>
-          </div>
-          <button
-            onClick={() => handleDeleteGoal(activeGoalId!)}
-            className="p-2 text-white/50 hover:text-red-400 hover:bg-white/10 rounded transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      </div>
+    <TaskBoardView
+      activeGoal={activeGoal || null}
+      getGoalEmoji={getGoalEmoji}
+      contentScanning={contentScanning}
+      scannedCount={scannedCount}
+      totalToScan={totalToScan}
+      onBackToDashboard={handleBackToDashboard}
+      onRescanContent={rescanContent}
+      onDeleteGoal={() => handleDeleteGoal(activeGoalId!)}
+      boardScrollRef={boardScrollRef}
+      onBoardMouseDown={handleBoardMouseDown}
+      onBoardMouseMove={handleBoardMouseMove}
+      onBoardMouseUp={handleBoardMouseUp}
+      onBoardMouseLeave={handleBoardMouseLeave}
+      sensors={sensors}
+      activeColumnDragId={activeColumnDragId}
+      activeTaskDrag={activeTaskDrag ?? null}
+      onDragStart={(e) => {
+        const activeId = e.active.id as string;
+        const isDraggingColumn = activeId.startsWith('column-');
 
-      {/* Kanban-style board layout - click and drag to scroll horizontally */}
-      <div
-        ref={boardScrollRef}
-        className="p-3 overflow-x-auto h-[calc(100vh-60px)]"
-        onMouseDown={handleBoardMouseDown}
-        onMouseMove={handleBoardMouseMove}
-        onMouseUp={handleBoardMouseUp}
-        onMouseLeave={handleBoardMouseLeave}
-      >
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          autoScroll={
-            // Disable auto-scroll when dragging columns, enable for cards
-            activeColumnDragId
-              ? false
-              : {
-                  threshold: { x: 0.1, y: 0.1 },
-                  acceleration: 5,
-                }
+        // Only save scroll position for card drags (not column drags)
+        if (!isDraggingColumn) {
+          savedScrollPosition.current = boardScrollRef.current?.scrollLeft ?? null;
+        } else {
+          // Prevent scroll during column drag by locking scroll position
+          if (boardScrollRef.current) {
+            const scrollLeft = boardScrollRef.current.scrollLeft;
+            boardScrollRef.current.dataset.lockedScroll = String(scrollLeft);
           }
-          onDragStart={(e) => {
-            const activeId = e.active.id as string;
-            const isDraggingColumn = activeId.startsWith('column-');
+        }
 
-            // Only save scroll position for card drags (not column drags)
-            if (!isDraggingColumn) {
-              savedScrollPosition.current = boardScrollRef.current?.scrollLeft ?? null;
-            } else {
-              // Prevent scroll during column drag by locking scroll position
+        // Check if dragging a column or a card
+        if (isDraggingColumn) {
+          setActiveColumnDragId(activeId);
+          setActiveTaskDragId(null);
+        } else {
+          setActiveTaskDragId(activeId);
+          setActiveColumnDragId(null);
+        }
+      }}
+      onDragOver={(e) => {
+        // Only handle drag over for cards, not columns - check event directly
+        const activeId = e.active.id as string;
+        if (!activeId.startsWith('column-')) {
+          handleTaskDragOver(e);
+        }
+      }}
+      onDragEnd={(e) => {
+        const activeId = e.active.id as string;
+        const isDraggingColumn = activeId.startsWith('column-');
+
+        // Only save/restore scroll for card drags, not column drags
+        const scrollPos = !isDraggingColumn
+          ? (boardScrollRef.current?.scrollLeft ?? savedScrollPosition.current)
+          : null;
+
+        // Handle based on what we're dragging
+        if (isDraggingColumn) {
+          handleColumnDragEnd(e);
+          setActiveColumnDragId(null);
+        } else {
+          handleTaskDragEnd(e);
+          setActiveTaskDragId(null);
+
+          // Restore scroll position after React re-renders (only for card drags)
+          if (scrollPos !== null) {
+            requestAnimationFrame(() => {
               if (boardScrollRef.current) {
-                const scrollLeft = boardScrollRef.current.scrollLeft;
-                boardScrollRef.current.dataset.lockedScroll = String(scrollLeft);
+                boardScrollRef.current.scrollLeft = scrollPos;
               }
-            }
-
-            // Check if dragging a column or a card
-            if (isDraggingColumn) {
-              setActiveColumnDragId(activeId);
-              setActiveTaskDragId(null);
-            } else {
-              setActiveTaskDragId(activeId);
-              setActiveColumnDragId(null);
-            }
-          }}
-          onDragOver={(e) => {
-            // Only handle drag over for cards, not columns - check event directly
-            const activeId = e.active.id as string;
-            if (!activeId.startsWith('column-')) {
-              handleTaskDragOver(e);
-            }
-          }}
-          onDragEnd={(e) => {
-            const activeId = e.active.id as string;
-            const isDraggingColumn = activeId.startsWith('column-');
-
-            // Only save/restore scroll for card drags, not column drags
-            const scrollPos = !isDraggingColumn
-              ? (boardScrollRef.current?.scrollLeft ?? savedScrollPosition.current)
-              : null;
-
-            // Handle based on what we're dragging
-            if (isDraggingColumn) {
-              handleColumnDragEnd(e);
-              setActiveColumnDragId(null);
-            } else {
-              handleTaskDragEnd(e);
-              setActiveTaskDragId(null);
-
-              // Restore scroll position after React re-renders (only for card drags)
-              if (scrollPos !== null) {
-                requestAnimationFrame(() => {
-                  if (boardScrollRef.current) {
-                    boardScrollRef.current.scrollLeft = scrollPos;
-                  }
-                });
-              }
-            }
-          }}
-          onDragCancel={() => {
-            setActiveTaskDragId(null);
-            setActiveColumnDragId(null);
-            // Restore scroll position on cancel too
-            if (savedScrollPosition.current !== null && boardScrollRef.current) {
-              boardScrollRef.current.scrollLeft = savedScrollPosition.current;
-            }
-          }}
-        >
-          <div className="flex gap-3 items-start h-full">
-            {/* SortableContext for column reordering */}
-            <SortableContext
-              items={stableColumnOrder.map(c => `column-${c}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              {stableColumnOrder.map(category => {
-                const tasks = groupedTasks[category] || [];
-                // Get display name for category
-                const categoryDisplayNames: Record<string, string> = {
-                  'to_watch': 'To Watch',
-                  'watching': 'Watching',
-                  'watched': 'Watched',
-                  'dropped': 'Dropped',
-                  'on_hold': 'On Hold',
-                  'tasks': 'Tasks',
-                  'custom': 'Custom',
-                };
-                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-                return (
-                  <SortableTaskColumn
-                    key={category}
-                    category={category}
-                    displayName={displayName}
-                    tasks={tasks}
-                  >
-                  {/* Per-column SortableContext - only cards in THIS column shift */}
-                  <SortableContext
-                    items={tasks.map(t => t.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {tasks.map(task => {
-                      const infoMatch = getTaskInfoMatch(task);
-                      return (
-                        <SortableTaskCardWrapper
-                          key={task.id}
-                          task={task}
-                          onSelect={() => handleSelectTask(task.id)}
-                          infoMatch={infoMatch}
-                        />
-                      );
-                    })}
-                  </SortableContext>
-
-                  {/* Add task button/form for this category */}
-                  {addingTaskToCategory === category ? (
-                    <div className="pt-1">
-                      <input
-                        type="text"
-                        value={newTaskText}
-                        onChange={(e) => setNewTaskText(e.target.value)}
-                        placeholder="Enter task title..."
-                        autoFocus
-                        className="w-full bg-[#22272b] border border-[#5a6370] rounded-lg px-3 py-2 text-white text-sm
-                                 placeholder-white/40 focus:outline-none focus:border-accent mb-2"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newTaskText.trim()) {
-                            handleAddTask(newTaskText, category);
-                          }
-                          if (e.key === 'Escape') {
-                            setAddingTaskToCategory(null);
-                            setNewTaskText('');
-                          }
-                        }}
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            if (newTaskText.trim()) {
-                              handleAddTask(newTaskText, category);
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-[#579dff] hover:bg-[#4a8fe8] text-white text-xs font-medium rounded transition-all"
-                        >
-                          Add Task
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAddingTaskToCategory(null);
-                            setNewTaskText('');
-                          }}
-                          className="px-3 py-1.5 text-white/60 hover:text-white hover:bg-[#3d444d] text-xs rounded transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setAddingTaskToCategory(category);
-                        setNewTaskText('');
-                      }}
-                      className="w-full px-3 py-2 text-[#9fadbc] hover:text-white hover:bg-[#22272b] text-sm
-                               flex items-center gap-2 transition-all rounded-lg"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Add a task
-                    </button>
-                  )}
-                </SortableTaskColumn>
-              );
-            })}
-            </SortableContext>
-
-            {/* Add another list button */}
-            <button
-              onClick={() => {
-                setAddingTaskToCategory('new_list');
-                setNewTaskText('');
-              }}
-              className="w-[280px] flex-shrink-0 px-3 py-2.5 bg-white/20 hover:bg-white/30
-                       rounded-xl text-white text-sm font-medium
-                       transition-all flex items-center gap-2 h-fit"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add another list
-            </button>
-            </div>
-
-          {/* Drag overlay - shows dragged card or column without affecting original */}
-          <DragOverlay
-            dropAnimation={{
-              duration: 200,
-              easing: 'ease',
-            }}
-          >
-            {activeTaskDrag ? (
-              <div className="rounded-lg shadow-lg px-3 py-2 bg-[#22272b] border-2 border-accent cursor-grabbing">
-                <span className="text-sm text-white">{activeTaskDrag.text}</span>
-              </div>
-            ) : activeColumnDragId ? (
-              // Column overlay
-              (() => {
-                const category = activeColumnDragId.replace('column-', '');
-                const categoryDisplayNames: Record<string, string> = {
-                  'to_watch': 'To Watch',
-                  'watching': 'Watching',
-                  'watched': 'Watched',
-                  'dropped': 'Dropped',
-                  'on_hold': 'On Hold',
-                  'tasks': 'Tasks',
-                  'custom': 'Custom',
-                };
-                const displayName = categoryDisplayNames[category] || category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                const tasks = groupedTasks[category] || [];
-                return (
-                  <div className="w-[280px] bg-[#101204] rounded-xl shadow-2xl border-2 border-accent cursor-grabbing opacity-90">
-                    <div className="px-3 py-2.5 flex items-center justify-between">
-                      <h3 className="text-[#b6c2cf] text-sm font-semibold">{displayName}</h3>
-                      <span className="text-[#9fadbc] text-xs bg-[#22272b] px-2 py-0.5 rounded">{tasks.length}</span>
-                    </div>
-                    <div className="px-2 pb-2 space-y-2 max-h-[200px] overflow-hidden">
-                      {tasks.slice(0, 3).map(task => (
-                        <div key={task.id} className="rounded-lg px-3 py-2 bg-[#22272b]">
-                          <span className="text-sm text-white/80">{task.text}</span>
-                        </div>
-                      ))}
-                      {tasks.length > 3 && (
-                        <div className="text-xs text-white/50 text-center py-1">
-                          +{tasks.length - 3} more
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      </div>
-
-      {/* Task Detail Modal */}
-      {selectedTask && (
-        <TaskDetailModal
-          task={selectedTask}
-          onClose={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
-          onToggleTask={handleToggleTask}
-          onEditTask={handleEditTask}
-          onDeleteTask={handleDeleteTask}
-          onToggleChecklistItem={handleToggleChecklistItem}
-          onAddChecklistItem={handleAddChecklistItem}
-          formatCategoryName={formatCategoryName}
-          renderDescriptionWithLinks={renderDescriptionWithLinks}
-        />
-      )}
-    </div>
+            });
+          }
+        }
+      }}
+      onDragCancel={() => {
+        setActiveTaskDragId(null);
+        setActiveColumnDragId(null);
+        // Restore scroll position on cancel too
+        if (savedScrollPosition.current !== null && boardScrollRef.current) {
+          boardScrollRef.current.scrollLeft = savedScrollPosition.current;
+        }
+      }}
+      stableColumnOrder={stableColumnOrder}
+      groupedTasks={groupedTasks}
+      addingTaskToCategory={addingTaskToCategory}
+      newTaskText={newTaskText}
+      onSetAddingTaskToCategory={setAddingTaskToCategory}
+      onSetNewTaskText={setNewTaskText}
+      onAddTask={handleAddTask}
+      onSelectTask={handleSelectTask}
+      getTaskInfoMatch={getTaskInfoMatch}
+      selectedTask={selectedTask ?? null}
+      onCloseTaskDetail={() => { setSelectedTaskId(null); setEditingTaskId(null); setEditingDescription(false); }}
+      onToggleTask={handleToggleTask}
+      onEditTask={handleEditTask}
+      onDeleteTask={handleDeleteTask}
+      onToggleChecklistItem={handleToggleChecklistItem}
+      onAddChecklistItem={handleAddChecklistItem}
+      formatCategoryName={formatCategoryName}
+      renderDescriptionWithLinks={renderDescriptionWithLinks}
+      onRenameList={handleRenameList}
+      onDeleteList={handleDeleteList}
+      onAddList={handleAddList}
+    />
   );
 }
+
 
 

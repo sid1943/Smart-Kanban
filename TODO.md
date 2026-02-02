@@ -251,6 +251,10 @@ Future improvements and features to be added.
 - [x] Board mini-cards with progress indicators (v0.3.7)
 - [x] Activity tracking for boards (lastActivityAt) (v0.3.7)
 - [x] Migration of existing boards to workspaces (v0.3.7)
+- [x] Live tiles workspace dashboard with flip animations (v0.3.8)
+- [x] Three tile sizes: Small, Medium, Wide with right-click context menu (v0.3.8)
+- [x] Auto-flip animation system with staggered timing (v0.3.8)
+- [x] Tile size persistence to localStorage (v0.3.8)
 
 ---
 
